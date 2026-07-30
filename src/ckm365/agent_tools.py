@@ -2,6 +2,11 @@
 
 Duck-typed — anything exposing .tool_plain(fn) works, so pydantic-ai is
 not a dependency of this package.
+
+Thread safety: the returned Ctx (and its Graph/Auth) is safe for
+concurrent use across threads — agent runtimes may invoke tools from
+worker threads. Call ctx.close() on shutdown, or use it as a context
+manager.
 """
 
 from pathlib import Path

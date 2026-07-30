@@ -1,0 +1,77 @@
+id: CKM-5
+title: Auth — app-only client credential + Exchange RBAC for Applications (interactive)
+column: todo
+status: todo
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-30T14:13:08Z'
+assignees: []
+description: |-
+  INTERACTIVE with seanwy — walk through cmdlets, no unattended tenant changes.
+  MULTI-TENANT: RBAC scoping is per tenant; repeat for each profile that
+  needs app-only mode (mailbox lists differ per tenant).
+
+  - Application permissions Mail.ReadWrite + Calendars.ReadWrite, scoped via
+    RBAC for Applications in Exchange Online (NOT legacy Application Access
+    Policy): management scope covering the operator's, ops@, tst.* mailboxes;
+    assign via New-ManagementRoleAssignment
+  - Certificate credential preferred over client secret
+
+  ClearKan asks folded in (tmp/clearkan-integration-requirements.md item 5;
+  their headless intake daemon DEPENDS on this issue — device-code auth is
+  impossible in their containers):
+  - 5.1 Live-verify the app-only code path end to end on one tenant
+    (doctor, live-smoke, CKM365_LIVE_ACCOUNT=<profile>-app pytest
+    tests/test_live.py).
+  - 5.2 Specifically confirm the delta/watch tools (list_new_messages /
+    wait_for_message) work app-only — delta bootstrap + token round-trip
+    with application permissions; report any behavioral difference.
+  - 5.3 Exchange RBAC scoping runbook (docs/app-only-setup.md,
+    placeholders only, cert-preferred) — their enterprise-review artifact.
+
+  SAFETY ORDER (non-negotiable, from our requirements doc + review): the
+  Exchange RBAC management scope MUST exist before any app-only credential
+  verification — an unscoped application permission can read EVERY mailbox
+  in the tenant, even "briefly for testing". Scope first (or same
+  interactive sitting), then verify. Also verify the NEGATIVE: app-only
+  profile must get 403/404 on a mailbox outside the management scope.
+dependencies:
+- CKM-4
+parent_id: null
+priority: high
+issue_type: task
+tags: [auth, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+- at: '2026-07-29T21:53:30Z'
+  by: claude
+  details: Noted per-tenant RBAC scoping (multi-tenant requirement)
+  event: updated
+- at: '2026-07-30T14:02:08Z'
+  by: claude
+  details: Folded in ClearKan asks 5.1-5.3 (app-only live verification incl.
+    delta/watch tools, then RBAC runbook); noted ClearKan's intake daemon
+    depends on this; recorded RBAC-scope-before-credential-verification
+    safety order and the out-of-scope negative test
+  event: updated
+- at: '2026-07-30T14:13:08Z'
+  by: claude
+  details: 'Moved to todo — all non-interactive prep is DONE and the issue is
+    ready for the interactive sitting with seanwy (pick ONE tenant: axomem or
+    intixa, per ckm365 doctor). Prepared: scripts/add-app-permissions.sh
+    (application role-type permissions, preserves delegated scopes, verifies
+    against actual appRoleAssignments, --dry-run mode; bash -n + merge logic
+    tested offline) and docs/app-only-setup.md (RBAC-FIRST ordering,
+    Test-ServicePrincipalAuthorization pre-checks, cert-preferred credential,
+    <name>-app local profile recipe, verification incl. the out-of-scope
+    negative test). OPEN QUESTION for the sitting: Microsoft documents
+    Exchange access as the UNION of Entra app-role grants and RBAC
+    assignments, so RBAC-only (no tenant-wide consent) is proposed as the
+    primary path and the negative test decides whether add-app-permissions.sh
+    is used at all. Remaining work is 100% interactive.'
+  event: moved
+version: 1

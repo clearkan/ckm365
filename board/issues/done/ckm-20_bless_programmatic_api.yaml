@@ -1,0 +1,57 @@
+id: CKM-20
+title: Bless the programmatic API surface (ClearKan item 4)
+column: done
+status: done
+created_at: '2026-07-30T14:02:08Z'
+updated_at: '2026-07-30T14:08:16Z'
+assignees:
+- claude
+description: |-
+  ClearKan's intake daemon wants neither MCP nor an LLM agent — it calls
+  the tool functions directly. Declare that surface supported (option (a)
+  from their doc — no facade):
+
+  - README + AGENTS.md: supported programmatic surface is
+    ckm365.tools.Ctx (create/target/profile/require_*/close), the tool
+    functions in ckm365.tools.{mail,calendar,watch,accounts}, the models
+    they return, and Graph(transport=...) for test injection. SemVer
+    applies from the next tag.
+  - docs/usage-modes.md: "Programmatic use (no MCP, no agent)" section
+    with a CORRECT example — list_new_messages returns a dict
+    {"messages", "delta_token", "matched"}, NOT a tuple (their sample was
+    wrong; bless the API as it is). Show Ctx pinning via account= and
+    `with Ctx.create(...) as ctx:`.
+  - Trivial offline test importing the blessed names — an import contract
+    that fails loudly on rename.
+
+  Origin: tmp/clearkan-integration-requirements.md item 4.
+dependencies:
+- CKM-19
+parent_id: null
+priority: medium
+issue_type: task
+tags: [clearkan, docs, api]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:02:08Z'
+  by: claude
+  details: Issue created in column todo (ClearKan integration item 4)
+  event: created
+- at: '2026-07-30T14:06:30Z'
+  by: claude
+  details: Moved to doing (CKM-19 dependency complete)
+  event: moved
+- at: '2026-07-30T14:08:16Z'
+  by: claude
+  details: 'Done. README "Supported programmatic API" section (Ctx methods,
+    tools.{mail,calendar,watch,accounts} functions, models, Graph(transport=);
+    SemVer from v1.4.0); AGENTS.md code-map note; docs/usage-modes.md
+    "Programmatic use (no MCP, no agent)" section with CORRECT
+    list_new_messages dict return shape ({"messages","delta_token","matched"}
+    — ClearKan''s sample assumed a tuple; API blessed as-is, not changed).
+    Import-contract test added (59 offline tests pass). Live-verified the
+    documented pattern on intixa: bootstrap poll + delta token round-trip +
+    context-manager close, counts/ids only.'
+  event: moved
+version: 1

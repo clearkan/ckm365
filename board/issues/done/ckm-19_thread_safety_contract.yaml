@@ -1,0 +1,55 @@
+id: CKM-19
+title: Thread-safety contract for Ctx/Graph/Auth (ClearKan item 3)
+column: done
+status: done
+created_at: '2026-07-30T14:02:08Z'
+updated_at: '2026-07-30T14:06:00Z'
+assignees:
+- claude
+description: |-
+  ClearKan will call ckm365 from asyncio.to_thread, so concurrent calls hit
+  one Ctx from multiple threads. Decide + implement + document the contract:
+  "Ctx/Graph/Auth are safe for concurrent use across threads; call
+  Ctx.close() on shutdown."
+
+  - Ctx.graph(): threading.Lock around the miss path — two threads must
+    never construct two Graphs (two httpx.Clients, one orphaned pool) for
+    one profile.
+  - Lifecycle: Graph.close() (closes httpx client), Ctx.close() (closes all
+    cached Graphs), Ctx.__enter__/__exit__.
+  - Auth._lock() docstring: state explicitly that flock on separately
+    opened fds ALSO serialises threads within one process, that this is
+    load-bearing for the thread-safety contract and must not be "optimised"
+    away; add a real threading.Lock alongside (belt and braces).
+  - Document where consumers will see it: README, agent_tools.py
+    docstring, AGENTS.md code map.
+  - Offline tests: ~20 concurrent ctx.graph() calls yield one Graph;
+    close() closes (httpx .is_closed); context-manager form works.
+
+  Origin: tmp/clearkan-integration-requirements.md item 3 (the "real ask").
+dependencies: []
+parent_id: null
+priority: high
+issue_type: improvement
+tags: [clearkan, thread-safety]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:02:08Z'
+  by: claude
+  details: Issue created in column doing (ClearKan integration item 3); work
+    starting immediately
+  event: created
+- at: '2026-07-30T14:06:00Z'
+  by: claude
+  details: 'Done. Implemented: Ctx._graphs_lock around the graph() miss path;
+    Graph.close(); Ctx.close() + __enter__/__exit__; Auth._lock() now holds a
+    threading.Lock AND documents that flock-on-own-fd also serialises
+    in-process threads (load-bearing, must not be optimised away). Contract
+    documented in context.py, agent_tools.py, README, AGENTS.md. Offline: 3
+    new tests (20-thread barrier race yields one Graph; close() closes httpx
+    client + idempotent; context-manager form) — 58 passed. Live-verified on
+    intixa: ckm365 doctor OK, live-smoke OK, CKM365_LIVE_ACCOUNT=intixa
+    pytest tests/test_live.py 5 passed.'
+  event: moved
+version: 1

@@ -1,6 +1,7 @@
 """Offline sanity tests — no tenant, no network (httpx.MockTransport)."""
 
 import inspect
+import threading
 
 import httpx
 import pytest
@@ -312,3 +313,74 @@ def test_bind_hides_ctx_from_signature():
     assert "folder" in params and "account" in params
     assert bound.__name__ == "list_messages"
     assert "ctx" not in bound.__annotations__
+
+
+# --- thread safety + lifecycle (CKM-19) -----------------------------------
+
+def test_concurrent_graph_calls_build_one_graph():
+    ctx = _ctx()
+    barrier = threading.Barrier(20)
+    results = []
+
+    def hit():
+        barrier.wait()  # all threads race the miss path together
+        results.append(ctx.graph("p"))
+
+    threads = [threading.Thread(target=hit) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(results) == 20
+    assert len({id(g) for g in results}) == 1
+    assert len(ctx._graphs) == 1
+    ctx.close()
+
+
+def test_close_closes_cached_graphs_and_is_idempotent():
+    ctx = _ctx()
+    ctx._graphs["p"] = g = make_graph(lambda r: httpx.Response(200, json={}))
+    assert not g._client.is_closed
+    ctx.close()
+    assert g._client.is_closed
+    assert ctx._graphs == {}
+    ctx.close()  # second close is a no-op, not an error
+
+
+def test_ctx_context_manager_closes(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text('[profiles.p]\ntenant_id = "t"\nclient_id = "c"\n')
+    with Ctx.create(profiles_path=path) as ctx:
+        g = ctx.graph("p")
+        assert not g._client.is_closed
+    assert g._client.is_closed
+
+
+# --- blessed programmatic API (CKM-20) ------------------------------------
+
+def test_blessed_api_import_contract():
+    """The supported programmatic surface (README "Supported programmatic
+    API"). Downstream consumers (ClearKan) pin to these names — a rename
+    here is a SemVer-MAJOR change, and this test is the loud failure."""
+    from ckm365.graph import Graph, GraphError                     # noqa: F401
+    from ckm365.models import (Attachment, Draft, Event,           # noqa: F401
+                               EventSummary, MailFolder, Message,
+                               MessageSummary)
+    from ckm365.tools import Ctx, SendDisabled, WriteDisabled      # noqa: F401
+    from ckm365.tools.accounts import list_accounts                # noqa: F401
+    from ckm365.tools.calendar import (create_event, get_event,    # noqa: F401
+                                       list_events, respond_event,
+                                       update_event)
+    from ckm365.tools.mail import (add_attachment, create_draft,   # noqa: F401
+                                   create_forward_draft,
+                                   create_reply_draft, get_message,
+                                   list_attachments, list_mail_folders,
+                                   list_messages, send_draft, update_draft)
+    from ckm365.tools.watch import (get_watch_command,             # noqa: F401
+                                    list_new_messages,
+                                    wait_for_message)
+
+    for method in ("create", "profile", "graph", "target", "require_write",
+                   "require_send", "close", "__enter__", "__exit__"):
+        assert callable(getattr(Ctx, method)), method
+    assert "transport" in inspect.signature(Graph.__init__).parameters
