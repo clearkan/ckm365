@@ -58,7 +58,8 @@ claude mcp add --scope user ckm365 -- uv run --directory /path/to/ckm365 \
 
 **See `docs/usage-modes.md`** for the concrete setups: multi-tenant operator
 with shared mailboxes, personal single-account use, and the planned
-headless/app-only mode.
+headless/app-only mode. Joining a tenant that already runs ckm365?
+**`docs/onboarding.md`** is the five-step quickstart.
 
 ## Layout
 

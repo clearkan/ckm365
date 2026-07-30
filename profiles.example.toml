@@ -11,6 +11,9 @@ client_id = "app-registration-client-id"
 auth = "device_code"
 description = "Tenant A work tenant (shared mailbox: ops@)"  # shown to agents
 # default_mailbox = "shared@example.com"  # optional; defaults to signed-in user
+# allow_send = false  # optional (default true): hard-cap the send tier for
+#                     # THIS profile, even when the server runs --enable-send;
+#                     # a capped profile also never requests Mail.Send scopes
 
 [profiles.tenant-b]
 tenant_id = "00000000-0000-0000-0000-000000000000"

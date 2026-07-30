@@ -240,8 +240,9 @@ def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
                mailbox: str | None = None) -> dict:
     """Send an existing draft. Refuses non-drafts and drafts with no
     recipients. Requires the server to run with --write AND --enable-send;
-    the profile needs Mail.Send consent (ckm365 login <profile> --send)."""
-    ctx.require_send()
+    the profile needs Mail.Send consent (ckm365 login <profile> --send)
+    and must not set allow_send = false."""
+    ctx.require_send(account)
     g, mb = ctx.target(account, mailbox)
     path = _message_path(mb, message_id)
     current = _require_draft(g, path, "send",

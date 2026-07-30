@@ -78,12 +78,20 @@ class Ctx:
             raise WriteDisabled(
                 "write tools are disabled; start the server with --write")
 
-    def require_send(self) -> None:
+    def require_send(self, account: str | None = None) -> None:
+        """Gate a send-tier operation: server flags first, then the target
+        profile's allow_send cap (call sites pass their account argument)."""
         self.require_write()
         if not self.send_enabled:
             raise SendDisabled(
                 "this operation delivers mail to recipients; start the "
                 "server with --write --enable-send")
+        profile = self.profile(account)
+        if not profile.allow_send:
+            raise SendDisabled(
+                f"profile {profile.name!r} sets allow_send = false in "
+                "profiles.toml — the send tier is capped for this profile "
+                "regardless of server flags")
 
 
 def bind(fn, ctx: Ctx):
