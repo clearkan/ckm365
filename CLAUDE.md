@@ -29,8 +29,8 @@ start; ask seanwy if missing).
 
 ## Reference
 
-- `docs/reference-notes.md` — Softeria ms-365-mcp-server study (phase 0)
-- `docs/module-layout-proposal.md` — module layout awaiting approval
-- `tmp/softeria-ref/` — reference clone (MIT; study only, never vendor)
+- `docs/reference-notes.md` — Softeria ms-365-mcp-server study (phase 0;
+  the reference clone itself is deleted — re-clone from GitHub if ever
+  needed, study only, never vendor)
 - Old client being replaced: the first-generation ClearKan `integrations/m365`
   module (private repo)

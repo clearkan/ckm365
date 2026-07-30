@@ -1,6 +1,6 @@
 [project]
 name = "ckm365"
-version = "1.4.0"
+version = "1.5.0"
 description = "Minimal multi-tenant Microsoft Graph MCP server (mail + calendar)"
 readme = "README.md"
 license = "MIT"
@@ -9,7 +9,7 @@ authors = [{ name = "Sean Whiteley" }]
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
-    "mcp>=1.2",
+    "mcp>=2.0",
     "msal>=1.31",
 ]
 

@@ -1,0 +1,42 @@
+id: CKM-22
+title: Public Ctx.set_graph() seam for consumer test injection
+column: done
+status: done
+created_at: '2026-07-30T14:39:43Z'
+updated_at: '2026-07-30T14:41:22Z'
+assignees:
+- claude
+description: |-
+  ClearKan follow-up ask A: docs/usage-modes.md pointed consumers at
+  ctx._graphs for injecting Graph(transport=MockTransport(...)) — a
+  private field outside the SemVer promise, yet the pattern their whole
+  offline suite depends on.
+
+  - Add Ctx.set_graph(account, graph): validates the profile name, swaps
+    under _graphs_lock, closes any replaced instance.
+  - Bless it: README supported list, import-contract test, and a
+    functional offline test (inject mock, call a tool through it).
+  - Update the docs/usage-modes.md snippet to use it.
+dependencies: []
+parent_id: null
+priority: medium
+issue_type: improvement
+tags: [clearkan, api]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:39:43Z'
+  by: claude
+  details: Issue created in column todo (ClearKan follow-up ask A)
+  event: created
+- at: '2026-07-30T14:41:22Z'
+  by: claude
+  details: 'Done. Ctx.set_graph(account, graph) added: validates profile via
+    self.profile() (so pin + unknown-account rules apply), swaps under
+    _graphs_lock, closes any replaced Graph. Blessed in README supported
+    list + import-contract test; docs/usage-modes.md snippet now uses
+    set_graph instead of ctx._graphs. Functional offline test covers
+    inject-then-call, unknown-account rejection, and replaced-instance
+    close. Suite: 60 passed.'
+  event: moved
+version: 1

@@ -380,7 +380,27 @@ def test_blessed_api_import_contract():
                                     list_new_messages,
                                     wait_for_message)
 
-    for method in ("create", "profile", "graph", "target", "require_write",
-                   "require_send", "close", "__enter__", "__exit__"):
+    for method in ("create", "profile", "graph", "set_graph", "target",
+                   "require_write", "require_send", "close", "__enter__",
+                   "__exit__"):
         assert callable(getattr(Ctx, method)), method
     assert "transport" in inspect.signature(Graph.__init__).parameters
+
+
+def test_set_graph_injection_seam():
+    """The blessed consumer-test pattern: build a Graph on a MockTransport,
+    install it with set_graph, and tools go through it."""
+    def handler(request):
+        return httpx.Response(200, json={"value": [
+            {"id": "m1", "subject": "s", "isDraft": False}]})
+
+    ctx = _ctx()
+    ctx.set_graph("p", make_graph(handler))
+    msgs = mail.list_messages(ctx, mailbox="me@x.com")
+    assert [m.id for m in msgs] == ["m1"]
+    with pytest.raises(ConfigError, match="unknown account"):
+        ctx.set_graph("nope", make_graph(handler))
+    replaced = ctx.graph("p")
+    ctx.set_graph("p", make_graph(handler))  # replacing closes the old one
+    assert replaced._client.is_closed
+    ctx.close()

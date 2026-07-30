@@ -3,6 +3,37 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.5.0] — 2026-07-30
+
+ClearKan follow-up release (their v1.4.0 verification report, items 0/A/B),
+plus repo cleanup. The Teams migration survey they sent is deliberately
+NOT built — it is a design decision first (CKM-24, options a/b/c, owner's
+call); nothing lands until that is settled.
+
+### Fixed
+- **`mcp` floor was wrong by a major version** (CKM-21): pyproject said
+  `mcp>=1.2` but `ckm365 serve` imports `mcp.server.mcpserver`, which only
+  exists from mcp 2.0 — installs resolving mcp 1.x imported fine and died
+  at serve time. Floor is now `mcp>=2.0` (re-locked); the stale "FastMCP"
+  docstring in server.py corrected. Programmatic-API consumers were never
+  affected (the mcp import is lazily scoped inside `_serve`).
+
+### Added
+- **`Ctx.set_graph(account, graph)`** (CKM-22): the supported seam for
+  injecting `Graph(transport=httpx.MockTransport(...))` in consumer
+  tests — validates the profile name, swaps under the graphs lock, closes
+  any replaced instance. Blessed (README + import-contract test);
+  `docs/usage-modes.md` no longer points consumers at the private
+  `_graphs` dict.
+- **`py.typed`** (CKM-23): PEP 561 marker shipped and verified present in
+  the built wheel — consumer type checkers now see the annotations.
+
+### Removed
+- Stale phase-0 artifacts: `docs/module-layout-proposal.md` (layout long
+  since implemented) and the `tmp/softeria-ref/` reference clone
+  (`docs/reference-notes.md` is the surviving record). References updated
+  in CLAUDE.md/README.
+
 ## [1.4.0] — 2026-07-30
 
 ClearKan-adoption release (their integration requirements, items 3–5).

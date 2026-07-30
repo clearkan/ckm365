@@ -1,7 +1,9 @@
 # Reference notes — Softeria `ms-365-mcp-server`
 
-Phase 0 study (CKM-2). Clone at `tmp/softeria-ref/` (git-ignored, delete after
-phase 1). MIT-licensed, **reference only** — nothing vendored, no dependency.
+Phase 0 study (CKM-2). The reference clone (`tmp/softeria-ref/`) was
+deleted once phases 1–2 completed; these notes are the surviving record —
+re-clone from GitHub if ever needed. MIT-licensed, **reference only** —
+nothing vendored, no dependency.
 
 ## Shape of the thing
 

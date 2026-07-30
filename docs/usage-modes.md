@@ -158,9 +158,10 @@ Notes:
 - One `Ctx` is safe across threads; async callers wrap calls in
   `await asyncio.to_thread(...)` (ckm365 is deliberately sync — MSAL has
   no async API, so an async facade would still block under the hood).
-- Consumer tests can inject `httpx.MockTransport` via
-  `Graph(transport=...)` and place it in `ctx._graphs` the way
-  `tests/test_offline.py` does.
+- Consumer tests inject `httpx.MockTransport` via `Graph(transport=...)`
+  and install it with the supported seam:
+  `ctx.set_graph("tenant-a", Graph(auth, transport=mock))` — never reach
+  into private attributes.
 
 ## Env var reference
 
