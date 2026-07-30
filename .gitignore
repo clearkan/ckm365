@@ -29,3 +29,6 @@ build/
 .vscode/
 *.swp
 .DS_Store
+
+# Subagent worktrees (never tracked)
+.claude/worktrees/
