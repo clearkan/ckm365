@@ -42,8 +42,9 @@ session; everything else worth knowing is one hop from here.
 5. Board issue → `done` with a history entry stating what was verified.
 6. Bump `VERSION` + `pyproject.toml` + `src/ckm365/__init__.py` (SemVer:
    new tools = minor) and add a `CHANGELOG.md` entry.
-7. Commit (imperative subject, body says what was verified) and push to
-   `origin main`.
+7. Commit (imperative subject, body says what was verified), tag the
+   release (`git tag -a vX.Y.Z -m "..."`), and push commit AND tags to
+   `origin main` — downstream consumers (ClearKan) pin to these tags.
 
 ## Absolute rules for this PUBLIC repo
 
