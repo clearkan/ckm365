@@ -1,10 +1,11 @@
 id: CKM-13
 title: Admin CLI — ckm365 user/mailbox subcommands for tenant setup, idiot-proof UX
-column: backlog
-status: backlog
+column: doing
+status: doing
 created_at: '2026-07-29T23:40:54Z'
-updated_at: '2026-07-29T23:40:54Z'
-assignees: []
+updated_at: '2026-07-30T01:29:52Z'
+assignees:
+- claude
 description: |-
   seanwy (2026-07-30): az-style CLI for permission/policy setup and user
   maintenance. CLI ONLY for now — deliberately NOT exposed as MCP tools.
@@ -39,4 +40,9 @@ history:
   by: claude
   details: Issue created in column backlog from seanwy's mid-session request
   event: created
+- at: '2026-07-30T01:29:52Z'
+  by: claude
+  details: Moved backlog -> doing; assigned to a parallel Fable 5
+    subagent working in an isolated git worktree; claude merges+tests
+  event: moved
 version: 1

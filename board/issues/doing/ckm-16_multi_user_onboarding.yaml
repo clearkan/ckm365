@@ -1,10 +1,11 @@
 id: CKM-16
 title: Multi-user onboarding — let colleague@tenant-b.example use ckm365 for HIS mailbox only
-column: backlog
-status: backlog
+column: doing
+status: doing
 created_at: '2026-07-30T00:03:49Z'
-updated_at: '2026-07-30T00:03:49Z'
-assignees: []
+updated_at: '2026-07-30T01:29:52Z'
+assignees:
+- claude
 description: |-
   seanwy (2026-07-30): allow colleague@tenant-b.example to start using this tool for
   his own mailbox, WITHOUT the ability to send (or act) on seanwy's behalf.
@@ -44,4 +45,9 @@ history:
   by: claude
   details: Issue created in column backlog from seanwy's request
   event: created
+- at: '2026-07-30T01:29:52Z'
+  by: claude
+  details: Moved backlog -> doing; assigned to a parallel Fable 5
+    subagent working in an isolated git worktree; claude merges+tests
+  event: moved
 version: 1
