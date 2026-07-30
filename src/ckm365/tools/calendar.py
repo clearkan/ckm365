@@ -56,11 +56,14 @@ def get_event(ctx: Ctx, event_id: str, *, timezone: str | None = None,
 def create_event(ctx: Ctx, *, subject: str, start: str, end: str,
                  timezone: str = "UTC", attendees: list[str] | None = None,
                  body_html: str | None = None, location: str | None = None,
-                 account: str | None = None, mailbox: str | None = None) -> Event:
+                 online_meeting: bool = False, account: str | None = None,
+                 mailbox: str | None = None) -> Event:
     """Create a calendar event. start/end are ISO 8601 datetimes interpreted
     in `timezone`. Attendees (email addresses) receive invitations the moment
     Graph saves the event, so attendee-bearing creates are send-tier and
-    additionally require --enable-send."""
+    additionally require --enable-send. online_meeting=True asks Graph to
+    provision a Teams meeting (join link in join_url; the organizer mailbox
+    must be Teams-enabled)."""
     ctx.require_write()
     if attendees:
         ctx.require_send()  # invitations are outbound mail (security review)
@@ -73,8 +76,37 @@ def create_event(ctx: Ctx, *, subject: str, start: str, end: str,
         payload["body"] = {"contentType": "html", "content": body_html}
     if location:
         payload["location"] = {"displayName": location}
+    if online_meeting:
+        payload["isOnlineMeeting"] = True
+        payload["onlineMeetingProvider"] = "teamsForBusiness"
     created = g.post(_path(mb, "events"), json=payload)
     return Event.model_validate(created)
+
+
+_RESPONSES = {"accept": "accept", "tentative": "tentativelyAccept",
+              "decline": "decline"}
+
+
+def respond_event(ctx: Ctx, event_id: str, response: str, *,
+                  comment: str | None = None, send_response: bool = True,
+                  account: str | None = None,
+                  mailbox: str | None = None) -> dict:
+    """Respond to a meeting invitation: response is 'accept', 'tentative',
+    or 'decline'. send_response=True notifies the organizer (requires
+    --enable-send); send_response=False only updates this calendar."""
+    if response not in _RESPONSES:
+        raise ValueError(f"response must be one of {sorted(_RESPONSES)}")
+    ctx.require_write()
+    if send_response:
+        ctx.require_send()  # the response is outbound mail to the organizer
+    g, mb = ctx.target(account, mailbox)
+    payload: dict = {"sendResponse": send_response}
+    if comment:
+        payload["comment"] = comment
+    g.post(_path(mb, f"events/{_seg(event_id, 'event_id')}/{_RESPONSES[response]}"),
+           json=payload)
+    return {"responded": response, "event_id": event_id,
+            "response_sent": send_response}
 
 
 def update_event(ctx: Ctx, event_id: str, *, subject: str | None = None,

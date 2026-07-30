@@ -1,0 +1,43 @@
+id: CKM-18
+title: Teams/SharePoint shared-site file access + local sync (phase 3 revived)
+column: backlog
+status: backlog
+created_at: '2026-07-30T00:56:30Z'
+updated_at: '2026-07-30T00:56:30Z'
+assignees: []
+description: |-
+  seanwy (2026-07-30): clients share Teams sites with us and today we sync
+  their document libraries to local input folders BY HAND. Phase 3 (files)
+  was deprioritized in the original requirements, but client-shared Teams
+  sites are a concrete recurring need — revive it scoped to that use case.
+
+  Sketch (additive over graph.py, per the phase rules):
+  - Read tools: list_sites (sites shared with/followed by the user),
+    list_drive_items(site/drive, path), download_file — delegated
+    Sites.Read.All + Files.Read.All scopes (NEW consent tier decision:
+    these widen the app's reach considerably; propose a separate opt-in
+    consent script like the send tier, or a dedicated read-files tier)
+  - `ckm365 sync <site-or-drive-url> <local-dir>` CLI: one-way pull with
+    delta tracking (Graph drive delta API) so re-sync moves only changes;
+    dry-run by default, no uploads in v1
+  - Accepts a full SharePoint/Teams URL and resolves it via
+    /shares/{encoded-url} (the "share URL to driveItem" Graph idiom)
+  - Big-file downloads must stream to disk (Softeria's downloadToFile
+    pattern) — never through agent context; respects CKM365_ATTACH_ROOT?
+    (probably a separate CKM365_SYNC_ROOT)
+  - Out of scope v1: uploads, two-way sync, OneNote, permissions admin
+dependencies:
+- CKM-13
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [phase-3, files, sharepoint]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T00:56:30Z'
+  by: claude
+  details: Issue created in column backlog from seanwy's request (manual
+    Teams-site sync pain)
+  event: created
+version: 1

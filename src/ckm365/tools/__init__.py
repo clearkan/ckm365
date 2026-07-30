@@ -13,7 +13,8 @@ READ = {
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,
              mail.update_draft, mail.create_draft, mail.add_attachment],
-    "calendar": [calendar.create_event, calendar.update_event],
+    "calendar": [calendar.create_event, calendar.update_event,
+                 calendar.respond_event],
 }
 SEND = {
     "mail": [mail.send_draft],

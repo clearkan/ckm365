@@ -159,8 +159,8 @@ def test_tools_for_presets():
     assert len(tools_for(["mail"])) == 5  # incl. list_accounts (ALWAYS)
     assert len(tools_for(["mail"], write=True)) == 10
     assert len(tools_for(["mail"], write=True, send=True)) == 11
-    assert len(tools_for(["all"], write=True)) == 14
-    assert len(tools_for(["all"], write=True, send=True)) == 15
+    assert len(tools_for(["all"], write=True)) == 15
+    assert len(tools_for(["all"], write=True, send=True)) == 16
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -177,6 +177,10 @@ def test_send_tier_gated():
                               start="2026-01-01T00:00:00",
                               end="2026-01-01T01:00:00",
                               attendees=["a@x.com"])
+    with pytest.raises(SendDisabled):
+        calendar.respond_event(_ctx(write_enabled=True), "e1", "accept")
+    with pytest.raises(ValueError, match="response must be"):
+        calendar.respond_event(_ctx(write_enabled=True), "e1", "maybe")
 
 
 def test_account_pin_blocks_cross_profile_and_hides_param():

@@ -3,6 +3,17 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.1.0] — 2026-07-30
+
+### Added
+- `respond_event` — accept / tentatively accept / decline meeting
+  invitations; notifying the organizer (`send_response=True`, the default)
+  is send-tier, calendar-only updates are write-tier.
+- `create_event(online_meeting=True)` provisions a Teams meeting via Graph
+  (`join_url` on the returned event). Note: silently unavailable when the
+  organizer mailbox has no Teams license (e.g. unlicensed shared
+  mailboxes) — organize from a licensed account instead.
+
 ## [1.0.0] — 2026-07-30
 
 Initial public release. Multi-tenant Microsoft Graph mail + calendar MCP

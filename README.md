@@ -34,7 +34,7 @@ and, eventually, the first-generation ClearKan `integrations/m365` module.
 |---|---|---|
 | *(none)* | reads + `list_accounts` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
 | `--write` | + draft/calendar writes, attachments | `*.ReadWrite[.Shared]` |
-| `--write --enable-send` | + `send_draft`, attendee-bearing event writes | + `Mail.Send[.Shared]` |
+| `--write --enable-send` | + `send_draft`, attendee-bearing event writes, meeting responses | + `Mail.Send[.Shared]` |
 
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
 on top of the base consent from `scripts/create-app-registration.sh`.
