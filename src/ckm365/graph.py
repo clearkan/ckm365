@@ -75,6 +75,11 @@ class Graph:
         self._client = httpx.Client(
             base_url=GRAPH_BASE, timeout=timeout, transport=transport)
 
+    def close(self) -> None:
+        """Close the underlying httpx client and its connection pool.
+        Idempotent. Prefer Ctx.close(), which closes every cached Graph."""
+        self._client.close()
+
     def request(self, method: str, path: str, *,
                 params: Mapping[str, str] | None = None,
                 json: Any = None,

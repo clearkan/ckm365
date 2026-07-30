@@ -4,11 +4,17 @@ Ctx carries the profiles, lazily-built Graph clients, and the write flag.
 bind() turns a tool function into a ctx-less callable whose signature both
 FastMCP and pydantic-ai can introspect, and is the single place tool
 invocations are logged (names and ids only — never bodies or tokens).
+
+Thread-safety contract (SemVer'd, consumers rely on it): Ctx, Graph, and
+Auth are safe for concurrent use across threads — one Ctx may serve many
+threads (e.g. asyncio.to_thread callers). Call Ctx.close() on shutdown,
+or use Ctx as a context manager.
 """
 
 import functools
 import inspect
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,6 +43,8 @@ class Ctx:
     send_enabled: bool = False
     account: str | None = None  # pin from --account
     _graphs: dict[str, Graph] = field(default_factory=dict, repr=False)
+    _graphs_lock: threading.Lock = field(default_factory=threading.Lock,
+                                         repr=False)
 
     @classmethod
     def create(cls, *, write: bool = False, send: bool = False,
@@ -57,10 +65,28 @@ class Ctx:
 
     def graph(self, account: str | None = None) -> Graph:
         p = self.profile(account)
-        if p.name not in self._graphs:
-            self._graphs[p.name] = Graph(
-                Auth(p, read_only=not self.write_enabled, send=self.send_enabled))
-        return self._graphs[p.name]
+        # Locked check-then-set: two threads racing the miss must not build
+        # two Graphs for one profile (the loser's httpx pool would leak).
+        with self._graphs_lock:
+            if p.name not in self._graphs:
+                self._graphs[p.name] = Graph(
+                    Auth(p, read_only=not self.write_enabled,
+                         send=self.send_enabled))
+            return self._graphs[p.name]
+
+    def close(self) -> None:
+        """Close every cached Graph (their httpx connection pools).
+        Idempotent; after close, the next tool call lazily rebuilds."""
+        with self._graphs_lock:
+            graphs, self._graphs = list(self._graphs.values()), {}
+        for g in graphs:
+            g.close()
+
+    def __enter__(self) -> "Ctx":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     def target(self, account: str | None, mailbox: str | None) -> tuple[Graph, str]:
         """Resolve (graph, mailbox): explicit > profile default > signed-in user."""

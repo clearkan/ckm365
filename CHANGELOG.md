@@ -3,6 +3,41 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.4.0] — 2026-07-30
+
+ClearKan-adoption release (their integration requirements, items 3–5).
+No async mode, no `mark_message_read`, and no domain-layer features were
+added — deliberate decisions, recorded in the board history and
+`tmp/clearkan-integration-reply.md`.
+
+### Added
+- **Thread-safety contract** (CKM-19), now documented and SemVer'd:
+  Ctx/Graph/Auth are safe for concurrent use across threads. `Ctx.graph()`
+  takes a lock around the miss path (two racing threads can no longer
+  build two Graphs and orphan an httpx pool); `Graph.close()`,
+  `Ctx.close()`, and the Ctx context-manager form provide clean shutdown;
+  `Auth._lock()` adds an in-process `threading.Lock` and documents that
+  flock-on-own-fd also serialises threads (load-bearing — do not
+  "optimise" away). Offline: 20-thread race, close, and context-manager
+  tests. Live-verified on one tenant (doctor, smoke, full live suite).
+- **Blessed programmatic API** (CKM-20): `ckm365.tools.Ctx`, the tool
+  functions in `ckm365.tools.{mail,calendar,watch,accounts}`, the models
+  they return, and `Graph(transport=...)` are the supported non-MCP,
+  non-agent surface, covered by SemVer from this tag. Documented in
+  README + `docs/usage-modes.md` ("Programmatic use", with the correct
+  `list_new_messages` dict return shape); guarded by an import-contract
+  test. Live-verified: documented pattern (bootstrap poll, delta token
+  round-trip, context-manager close) ran against a real tenant.
+- **App-only prep** (CKM-5, not yet live-verified — the tenant work is
+  interactive): `scripts/add-app-permissions.sh` (application role-type
+  permissions, preserves existing delegated scopes, grant-verified
+  against actual appRoleAssignments, `--dry-run`) and
+  `docs/app-only-setup.md` (per-tenant runbook: RBAC-for-Applications
+  scoping FIRST, certificate credential preferred, out-of-scope negative
+  test mandatory). Records the union caveat: an Entra app-role consent is
+  NOT narrowed by an Exchange management scope, so RBAC-only is the
+  proposed primary path.
+
 ## [1.3.0] — 2026-07-30
 
 ### Added

@@ -116,10 +116,51 @@ One rule: one human per OS account. Caches live under your home directory
 ## Mode 3 — headless / app-only (planned, CKM-5)
 
 Client-credential auth (`auth = "client_credential"` + cert/secret via
-`CKM365_<PROFILE>_*` env vars) exists in the code but is not yet used: it
-requires Exchange **RBAC for Applications** scoping on the tenant so the
-app can only reach an allow-listed set of mailboxes. Tracked as CKM-5; do
-not use app-only mode before that scoping is in place.
+`CKM365_<PROFILE>_*` env vars) exists in the code but is not yet
+live-verified: it requires Exchange **RBAC for Applications** scoping on
+the tenant so the app can only reach an allow-listed set of mailboxes.
+The full per-tenant recipe (RBAC-first ordering, certificate credential,
+verification incl. the out-of-scope negative test) is
+**`docs/app-only-setup.md`**. Tracked as CKM-5; do not use app-only mode
+before that scoping is in place.
+
+## Programmatic use (no MCP, no agent)
+
+For daemons and plain scripts (ClearKan's intake poller is the canonical
+consumer): import the supported surface directly — see README
+"Supported programmatic API" for exactly what is SemVer'd.
+
+```python
+from ckm365.tools import Ctx
+from ckm365.tools.watch import list_new_messages
+
+# account= pins the Ctx to one profile (isolation, not just a default);
+# the context-manager form closes the httpx pools on exit.
+with Ctx.create(account="tenant-a", write=False) as ctx:
+    res = list_new_messages(ctx, mailbox="ops@tenant-a.example")
+    token = res["delta_token"]        # bootstrap poll: carry this forward
+    while polling:
+        res = list_new_messages(ctx, token, mailbox="ops@tenant-a.example")
+        token = res["delta_token"]
+        for msg in res["messages"]:   # MessageSummary models
+            handle(msg.id)
+```
+
+Notes:
+
+- `list_new_messages` returns a **dict** `{"messages": [MessageSummary],
+  "delta_token": str, "matched": int}` — not a tuple. `matched` can
+  exceed `len(messages)` when capped by `top=`.
+- Every tool function takes `Ctx` first, then plain typed arguments; they
+  return pydantic models (or dicts of them) and raise
+  `WriteDisabled`/`SendDisabled`/`GraphError`/`NeedsLogin` — the same
+  gating as the MCP server, enforced in the functions themselves.
+- One `Ctx` is safe across threads; async callers wrap calls in
+  `await asyncio.to_thread(...)` (ckm365 is deliberately sync — MSAL has
+  no async API, so an async facade would still block under the hood).
+- Consumer tests can inject `httpx.MockTransport` via
+  `Graph(transport=...)` and place it in `ctx._graphs` the way
+  `tests/test_offline.py` does.
 
 ## Env var reference
 

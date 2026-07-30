@@ -9,6 +9,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 import msal
@@ -57,6 +58,7 @@ class Auth:
         self._cache = msal.SerializableTokenCache()
         self._cache_path = (cache_dir or state_dir()) / f"{profile.name}.msal.json"
         self._app: msal.ClientApplication | None = None
+        self._thread_lock = threading.Lock()  # see _lock()
 
     def _application(self) -> msal.ClientApplication:
         if self._app is None:
@@ -72,20 +74,31 @@ class Auth:
 
     @contextlib.contextmanager
     def _lock(self):
-        """Cross-process lock on a sidecar file: two servers refreshing the
-        same rotated refresh token must not clobber each other's persist."""
-        if fcntl is None:  # pragma: no cover
-            yield
-            return
-        self._cache_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(self._cache_path.with_suffix(".lock"),
-                     os.O_CREAT | os.O_WRONLY, 0o600)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            os.close(fd)
+        """Serialise the reload → acquire → persist window, cross-process
+        AND cross-thread.
+
+        The flock guards two servers refreshing the same rotated refresh
+        token against clobbering each other's persist. Because every entry
+        opens its OWN fd, POSIX flock also blocks other *threads* in this
+        process — that subtlety is load-bearing for the thread-safety
+        contract (Ctx/Graph/Auth are safe for concurrent use across
+        threads) and must not be "optimised" away, e.g. by sharing one fd
+        or skipping the flock when already in-process. The explicit
+        threading.Lock is belt and braces on top, and is the only
+        serialisation on platforms without fcntl."""
+        with self._thread_lock:
+            if fcntl is None:  # pragma: no cover
+                yield
+                return
+            self._cache_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(self._cache_path.with_suffix(".lock"),
+                         os.O_CREAT | os.O_WRONLY, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
 
     def _sole_account(self, app: msal.ClientApplication):
         """The one cached account for this profile, or None. More than one

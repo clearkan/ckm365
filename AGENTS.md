@@ -74,6 +74,18 @@ watch/login/logout + admin.py: mailbox/app/doctor) and `agent_tools.py`
 (pydantic-ai). Tests: `tests/test_offline.py` + per-module files;
 `tests/test_live.py` is the env-gated live suite.
 
+Ctx/Graph/Auth are safe for concurrent use across threads; call
+`Ctx.close()` on shutdown (or use Ctx as a context manager). The flock in
+`Auth._lock()` doubles as the in-process serialiser — see its docstring
+before touching it.
+
+The SUPPORTED programmatic surface (SemVer'd from v1.4.0, consumed by
+ClearKan): `ckm365.tools.Ctx` (create/profile/graph/target/require_*/
+close/context-manager), the tool functions in
+`ckm365.tools.{mail,calendar,watch,accounts}`, the models they return,
+and `Graph(transport=...)` for test injection. Renaming any of these is a
+breaking change — `tests/test_offline.py` carries the import contract.
+
 ## Gotchas already paid for (do not rediscover)
 
 - Outlook message delta IGNORES `$deltatoken=latest` (directory-only) and

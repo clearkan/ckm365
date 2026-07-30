@@ -10,7 +10,32 @@ and, eventually, the first-generation ClearKan `integrations/m365` module.
 1. **Claude Code** via stdio MCP (`ckm365 serve`)
 2. **pydantic-ai agents** via direct in-process registration
    (`ckm365.agent_tools.register` — no MCP transport, no HTTP)
-3. Other harnesses later — tool functions stay transport-agnostic
+3. **Plain Python** via the supported programmatic API (below) — no MCP,
+   no agent; this is how ClearKan's intake daemon consumes ckm365
+
+All consumers share one thread-safety contract: **`Ctx`/`Graph`/`Auth` are
+safe for concurrent use across threads** — one `Ctx` may serve many threads
+(e.g. `asyncio.to_thread` callers). Call `Ctx.close()` on shutdown, or use
+`with Ctx.create(...) as ctx:`, to release the httpx connection pools.
+
+## Supported programmatic API
+
+The following surface is supported and covered by SemVer from v1.4.0
+onward (renames or signature breaks are a major bump; an import-contract
+test in `tests/test_offline.py` fails loudly on drift):
+
+- `ckm365.tools.Ctx` — `create()`, `profile()`, `graph()`, `target()`,
+  `require_write()`, `require_send()`, `close()`, and the
+  context-manager form
+- The tool functions in `ckm365.tools.mail`, `.calendar`, `.watch`, and
+  `.accounts` — plain typed callables taking `Ctx` as first argument
+- The pydantic models they return (`ckm365.models`)
+- `ckm365.graph.Graph(transport=...)` for httpx `MockTransport` injection
+  in consumer test suites
+
+Everything else (`auth.py` internals, `server.py`, underscore-prefixed
+helpers) may change in any release. Worked example:
+`docs/usage-modes.md` → "Programmatic use (no MCP, no agent)".
 
 ## Principles
 
@@ -80,9 +105,10 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phase 1 complete and live-verified on two tenants: read, draft-cycle,
-attachments, and the gated send tier (incl. cross-tenant + shared
-mailboxes). Security + simplification reviews done; deferred findings
-tracked on the board (CKM-14/15). Next: admin CLI (CKM-13), test-mailbox
-pytest suite (CKM-9), event-driven watch tools (CKM-10), app-only RBAC
-mode (CKM-5).
+Phases 1–2 complete and live-verified on two tenants: 19 tools (mail /
+calendar / watch / accounts), three-tier gating, admin CLI, live
+integration suite, and — as of v1.4.0 — the thread-safety contract and
+the supported programmatic API (SemVer'd; releases are tagged `vX.Y.Z`
+for downstream pinning). Security + simplification reviews done. Next:
+app-only RBAC mode (CKM-5, prep done, interactive sitting pending),
+SharePoint/Teams file sync (CKM-18).
