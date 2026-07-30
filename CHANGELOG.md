@@ -3,6 +3,28 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.3.0] — 2026-07-30
+
+### Added
+- Live integration suite `tests/test_live.py` (CKM-9): env-gated
+  (`CKM365_LIVE_ACCOUNT`), zero-residue — read path, the full
+  createReply → PATCH-top → attach → update → delete cycle with a 404
+  residue check, non-draft refusal, calendar cycle, delta bootstrap.
+  Verified against both tenants. Companion
+  `scripts/create-test-mailbox.ps1` / `remove-test-mailbox.ps1` provision
+  `tst.*` shared mailboxes (remove refuses non-`tst.*` addresses).
+- `AGENTS.md` — the session entry point for agents: reading order,
+  working loop, public-repo rules, code map, and the Graph gotchas
+  already paid for.
+
+### Changed
+- Simplification pass (CKM-14): shared `pull()` list-fetch helper;
+  `create_draft` takes `body_html` like its siblings; `add_attachment`
+  derives name/MIME from the file; model field-shape consistency.
+  Deliberately kept (recorded on the board): literal tool signatures,
+  the per-call `account` parameter, app-only auth code, explicit patch
+  builders.
+
 ## [1.2.0] — 2026-07-30
 
 Three features built by parallel review-hardened subagent worktrees,

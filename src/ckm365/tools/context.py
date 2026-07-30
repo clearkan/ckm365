@@ -94,6 +94,14 @@ class Ctx:
                 "regardless of server flags")
 
 
+def pull(g: Graph, model, path: str, *, params: dict, top: int,
+         headers: dict | None = None) -> list:
+    """The list-tool idiom: paged fetch projected into a model (CKM-14)."""
+    return [model.model_validate(item)
+            for item in g.paged(path, params=params, max_items=top,
+                                headers=headers)]
+
+
 def bind(fn, ctx: Ctx):
     """Bind ctx away, preserving an introspectable signature, and log the call.
 

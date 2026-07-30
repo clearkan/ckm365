@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..graph import Graph, encode_segment as _seg, mailbox_path as _path
 from ..models import Attachment, Body, Draft, MailFolder, Message, MessageSummary
-from .context import Ctx
+from .context import Ctx, pull
 
 log = logging.getLogger("ckm365")
 
@@ -87,8 +87,7 @@ def list_messages(ctx: Ctx, *, folder: str = "inbox", search: str | None = None,
     else:
         params["$orderby"] = "receivedDateTime desc"
     path = _path(mb, f"mailFolders/{_seg(folder, 'folder')}/messages")
-    return [MessageSummary.model_validate(m)
-            for m in g.paged(path, params=params, max_items=top)]
+    return pull(g, MessageSummary, path, params=params, top=top)
 
 
 def get_message(ctx: Ctx, message_id: str, *, body_format: str = "text",
@@ -106,22 +105,18 @@ def list_mail_folders(ctx: Ctx, *, account: str | None = None,
     """List top-level mail folders with item/unread counts."""
     g, mb = ctx.target(account, mailbox)
     params = {"$select": MailFolder.SELECT, "$top": "100"}
-    return [MailFolder.model_validate(f)
-            for f in g.paged(_path(mb, "mailFolders"), params=params, max_items=200)]
+    return pull(g, MailFolder, _path(mb, "mailFolders"), params=params, top=200)
 
 
 def list_attachments(ctx: Ctx, message_id: str, *, account: str | None = None,
                      mailbox: str | None = None) -> list[Attachment]:
     """List a message's attachment metadata (name, type, size — never content)."""
     g, mb = ctx.target(account, mailbox)
-    params = {"$select": Attachment.SELECT}
-    return [Attachment.model_validate(a)
-            for a in g.paged(_message_path(mb, message_id, "/attachments"),
-                             params=params, max_items=100)]
+    return pull(g, Attachment, _message_path(mb, message_id, "/attachments"),
+                params={"$select": Attachment.SELECT}, top=100)
 
 
 def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
-                   name: str | None = None, content_type: str | None = None,
                    account: str | None = None,
                    mailbox: str | None = None) -> Attachment:
     """Attach a local file to a DRAFT (max 3 MB). The file is read by the
@@ -143,8 +138,8 @@ def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
     _require_draft(g, path, "attach to")
     payload = {
         "@odata.type": "#microsoft.graph.fileAttachment",
-        "name": name or source.name,
-        "contentType": content_type or mimetypes.guess_type(source.name)[0]
+        "name": source.name,
+        "contentType": mimetypes.guess_type(source.name)[0]
         or "application/octet-stream",
         "contentBytes": base64.b64encode(data).decode("ascii"),
     }
@@ -216,8 +211,8 @@ def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
                 headers=_etag_header(current)))
 
 
-def create_draft(ctx: Ctx, *, to: list[str], subject: str, body: str,
-                 html: bool = False, cc: list[str] | None = None,
+def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
+                 cc: list[str] | None = None,
                  bcc: list[str] | None = None, account: str | None = None,
                  mailbox: str | None = None) -> Draft:
     """Create a brand-new draft (not a reply or forward). Never sends."""
@@ -225,7 +220,7 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body: str,
     g, mb = ctx.target(account, mailbox)
     message: dict = {
         "subject": subject,
-        "body": {"contentType": "html" if html else "text", "content": body},
+        "body": {"contentType": "html", "content": body_html},
         "toRecipients": _addrs(to),
     }
     if cc:

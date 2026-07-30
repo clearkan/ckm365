@@ -1,6 +1,6 @@
 [project]
 name = "ckm365"
-version = "1.2.0"
+version = "1.3.0"
 description = "Minimal multi-tenant Microsoft Graph MCP server (mail + calendar)"
 readme = "README.md"
 license = "MIT"

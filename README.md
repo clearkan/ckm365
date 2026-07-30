@@ -65,6 +65,7 @@ headless/app-only mode. Joining a tenant that already runs ckm365?
 
 | Path | Purpose |
 |---|---|
+| `AGENTS.md` | Entry point for agent sessions: workflow, conventions, gotchas |
 | `src/ckm365/` | The server: config, auth, graph client, tools, front doors |
 | `docs/` | Usage modes, reference notes, design docs |
 | `board/` | Local ClearKan task board (see `.claude/skills/clearkan-lite/`) |

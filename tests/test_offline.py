@@ -184,7 +184,7 @@ def _ctx(**kw):
 
 def test_write_tools_gated():
     with pytest.raises(WriteDisabled):
-        mail.create_draft(_ctx(), to=["a@x.com"], subject="s", body="b")
+        mail.create_draft(_ctx(), to=["a@x.com"], subject="s", body_html="b")
 
 
 def test_tools_for_presets():

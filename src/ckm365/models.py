@@ -37,7 +37,7 @@ class MessageSummary(_Base):
     sender: Recipient | None = Field(None, alias="from")
     received: str | None = Field(None, alias="receivedDateTime")
     preview: str | None = Field("", alias="bodyPreview")
-    is_read: bool | None = Field(None, alias="isRead")
+    is_read: bool = Field(False, alias="isRead")
     is_draft: bool = Field(False, alias="isDraft")
     has_attachments: bool = Field(False, alias="hasAttachments")
 

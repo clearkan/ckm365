@@ -4,7 +4,7 @@ import re
 
 from ..graph import encode_segment as _seg, mailbox_path as _path
 from ..models import Event, EventSummary
-from .context import Ctx
+from .context import Ctx, pull
 
 _TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
 
@@ -38,9 +38,8 @@ def list_events(ctx: Ctx, *, start: str, end: str, timezone: str | None = None,
     params = {"startDateTime": start, "endDateTime": end,
               "$select": EventSummary.SELECT, "$orderby": "start/dateTime",
               "$top": str(min(top, 100))}
-    return [EventSummary.model_validate(e)
-            for e in g.paged(_path(mb, "calendarView"), params=params,
-                             max_items=top, headers=headers)]
+    return pull(g, EventSummary, _path(mb, "calendarView"), params=params,
+                top=top, headers=headers)
 
 
 def get_event(ctx: Ctx, event_id: str, *, timezone: str | None = None,

@@ -1,10 +1,11 @@
 id: CKM-9
 title: Test mailbox scripts — create/remove tst.* shared mailboxes (interactive first run)
-column: backlog
-status: backlog
+column: done
+status: done
 created_at: '2026-07-29T21:47:41Z'
-updated_at: '2026-07-29T21:47:41Z'
-assignees: []
+updated_at: '2026-07-30T04:03:33Z'
+assignees:
+- claude
 description: |-
   scripts/create-test-mailbox.ps1 + scripts/remove-test-mailbox.ps1 using
   ExchangeOnlineManagement (New-Mailbox -Shared) — pattern
@@ -15,8 +16,7 @@ description: |-
   Later (not yet): pytest integration suite that provisions a mailbox,
   exercises createReply -> PATCH -> verify-draft, tears down. Structure
   tooling now so that is possible; no CI harness yet.
-dependencies:
-- CKM-5
+dependencies: []
 parent_id: null
 priority: medium
 issue_type: task
@@ -28,4 +28,8 @@ history:
   by: claude
   details: Issue created in column backlog
   event: created
+- at: '2026-07-30T04:03:33Z'
+  by: claude
+  details: create/remove-test-mailbox.ps1 written (tst.*-only guard on remove; first interactive run pending when a dedicated test mailbox is wanted). tests/test_live.py: env-gated zero-residue integration suite (read path, full draft cycle w/ attachment+update+delete+404 check, non-draft refusal, calendar cycle, delta bootstrap) — verified live against BOTH tenants (5/5 each). Dependency on CKM-5 dropped: delegated auth suffices. Moved backlog -> done
+  event: moved
 version: 1
