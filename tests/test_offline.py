@@ -188,11 +188,11 @@ def test_write_tools_gated():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 5  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 10
-    assert len(tools_for(["mail"], write=True, send=True)) == 11
-    assert len(tools_for(["all"], write=True)) == 15
-    assert len(tools_for(["all"], write=True, send=True)) == 16
+    assert len(tools_for(["mail"])) == 8  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 13
+    assert len(tools_for(["mail"], write=True, send=True)) == 14
+    assert len(tools_for(["all"], write=True)) == 18
+    assert len(tools_for(["all"], write=True, send=True)) == 19
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):

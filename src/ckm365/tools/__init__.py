@@ -1,13 +1,14 @@
 """Tool registry: presets are explicit function lists, split read vs write."""
 
-from . import accounts, calendar, mail
+from . import accounts, calendar, mail, watch
 from .context import Ctx, SendDisabled, WriteDisabled, bind
 
 ALWAYS = [accounts.list_accounts]  # registered with every preset
 
 READ = {
     "mail": [mail.list_messages, mail.get_message, mail.list_mail_folders,
-             mail.list_attachments],
+             mail.list_attachments, watch.list_new_messages,
+             watch.wait_for_message, watch.get_watch_command],
     "calendar": [calendar.list_events, calendar.get_event],
 }
 WRITE = {

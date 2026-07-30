@@ -9,6 +9,7 @@ from pathlib import Path
 from . import __version__
 from .auth import Auth, AuthError, NeedsLogin
 from .config import ConfigError, load_profiles, resolve_profile
+from .graph import GraphError
 from .tools import Ctx, bind, tools_for
 
 log = logging.getLogger("ckm365")
@@ -32,6 +33,22 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--account", default=None,
                        help="pin every call to one profile")
 
+    watch = sub.add_parser(
+        "watch", help="poll (read-only) until matching mail arrives — exit 0 "
+                      "on match, 3 on timeout; run as a background task")
+    watch.add_argument("--from", dest="from_addresses", action="append",
+                       metavar="ADDR", help="sender to match (repeatable)")
+    watch.add_argument("--contains", default=None, metavar="TEXT",
+                       help="subject substring to match")
+    watch.add_argument("--folder", default="inbox")
+    watch.add_argument("--timeout", type=float, default=3600,
+                       help="seconds before giving up (default 3600)")
+    watch.add_argument("--poll", type=float, default=15,
+                       help="seconds between delta polls (default 15)")
+    watch.add_argument("--account", default=None, help="profile name")
+    watch.add_argument("--mailbox", default=None,
+                       help="mailbox (default: the signed-in user)")
+
     for name, help_ in (("login", "device-code login for a profile"),
                         ("logout", "clear a profile's token cache")):
         p = sub.add_parser(name, help=help_)
@@ -51,6 +68,8 @@ def main(argv: list[str] | None = None) -> None:
                 parser.error("--enable-send requires --write")
             _serve(args)
             return
+        if args.command == "watch":
+            raise SystemExit(_watch(args))
         profile = resolve_profile(load_profiles(args.profiles), args.profile)
         auth = Auth(profile, read_only=False)
         if args.command == "login":
@@ -84,3 +103,27 @@ def _serve(args: argparse.Namespace) -> None:
              len(fns), ",".join(presets), args.write, args.enable_send,
              ",".join(sorted(ctx.profiles)))
     mcp.run()
+
+
+def _watch(args: argparse.Namespace) -> int:
+    """Background-watch process: exit 0 on matching mail (the harness wakes
+    the agent), 3 on timeout, 1 on error. Read-only Ctx; output carries
+    counts and truncated ids only — never subjects, senders, or bodies."""
+    from .tools import watch as watch_tools
+
+    ctx = Ctx.create(profiles_path=args.profiles)
+    try:
+        res = watch_tools.wait_for_message(
+            ctx, timeout_s=args.timeout, poll_s=args.poll,
+            folder=args.folder, from_addresses=args.from_addresses,
+            subject_contains=args.contains, account=args.account,
+            mailbox=args.mailbox)
+    except GraphError as exc:
+        print(f"ckm365 watch: {exc}", file=sys.stderr)
+        return 1
+    if res["timed_out"]:
+        print(f"ckm365 watch: no matching mail after {args.timeout:g}s")
+        return 3
+    ids = ",".join(m.id[:12] for m in res["messages"][:5])
+    print(f"ckm365 watch: matched={res['matched']} ids={ids}")
+    return 0
