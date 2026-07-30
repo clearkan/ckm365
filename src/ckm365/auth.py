@@ -48,7 +48,9 @@ class Auth:
         self._delegated = profile.auth == "device_code"
         if not self._delegated:
             self.scopes = APP_ONLY_SCOPES
-        elif send:
+        elif send and profile.allow_send:
+            # allow_send = false downscopes even in send mode: a capped
+            # profile never requests (or silently refreshes) Mail.Send.
             self.scopes = DELEGATED_SEND
         else:
             self.scopes = DELEGATED_RO if read_only else DELEGATED_RW
@@ -152,7 +154,9 @@ class Auth:
 
         Requests the ReadWrite scopes so one consent covers read + write;
         a read-only server start silently downscopes. Send consent is a
-        deliberate extra step: pass send=True (CLI: login --send).
+        deliberate extra step: pass send=True (CLI: login --send) — ignored
+        for allow_send = false profiles, whose caches must never hold
+        send-consented tokens.
         """
         if not self._delegated:
             self.token()
@@ -160,7 +164,8 @@ class Auth:
         self._reload()
         app = self._application()
         flow = app.initiate_device_flow(
-            scopes=DELEGATED_SEND if send else DELEGATED_RW)
+            scopes=DELEGATED_SEND if send and self.profile.allow_send
+            else DELEGATED_RW)
         if "user_code" not in flow:
             raise AuthError(f"device flow failed: {flow.get('error_description', flow)}")
         print(f"\n{flow['message']}\n", file=sys.stderr, flush=True)

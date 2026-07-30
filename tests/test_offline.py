@@ -5,6 +5,7 @@ import inspect
 import httpx
 import pytest
 
+from ckm365.auth import DELEGATED_RW, DELEGATED_SEND, Auth
 from ckm365.config import ConfigError, Profile, load_profiles, resolve_profile
 from ckm365.graph import GRAPH_BASE, Graph, GraphError, mailbox_path
 from ckm365.models import Event, Message
@@ -49,6 +50,37 @@ def test_load_and_resolve_profiles(tmp_path):
         resolve_profile(profiles, None)
     with pytest.raises(ConfigError, match="unknown account"):
         resolve_profile(profiles, "nope")
+
+
+def test_allow_send_key_parsed_defaulted_and_validated(tmp_path):
+    path = tmp_path / "profiles.toml"
+    path.write_text(
+        '[profiles.capped]\ntenant_id = "t1"\nclient_id = "c1"\n'
+        'allow_send = false\n'
+        '[profiles.open]\ntenant_id = "t2"\nclient_id = "c2"\n')
+    profiles = load_profiles(path)
+    assert profiles["capped"].allow_send is False
+    assert profiles["open"].allow_send is True  # default
+    path.write_text('[profiles.x]\ntenant_id = "t"\nclient_id = "c"\n'
+                    'allow_send = "false"\n')  # truthy string must not pass
+    with pytest.raises(ConfigError, match="allow_send"):
+        load_profiles(path)
+    path.write_text('[profiles.x]\ntenant_id = "t"\nclient_id = "c"\n'
+                    'alow_send = false\n')
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_profiles(path)
+
+
+# --- auth -----------------------------------------------------------------
+
+def test_send_capped_profile_never_requests_send_scopes(tmp_path):
+    capped = Profile(name="p", tenant_id="t", client_id="c", allow_send=False)
+    scopes = Auth(capped, read_only=False, send=True, cache_dir=tmp_path).scopes
+    assert scopes == DELEGATED_RW
+    assert not any("Send" in s for s in scopes)
+    open_ = Profile(name="q", tenant_id="t", client_id="c")
+    assert Auth(open_, read_only=False, send=True,
+                cache_dir=tmp_path).scopes == DELEGATED_SEND
 
 
 # --- graph ----------------------------------------------------------------
@@ -181,6 +213,36 @@ def test_send_tier_gated():
         calendar.respond_event(_ctx(write_enabled=True), "e1", "accept")
     with pytest.raises(ValueError, match="response must be"):
         calendar.respond_event(_ctx(write_enabled=True), "e1", "maybe")
+
+
+def _capped_ctx(**profile_kw):
+    profiles = {"p": Profile(name="p", tenant_id="t", client_id="c",
+                             allow_send=False, **profile_kw)}
+    return Ctx(profiles=profiles, write_enabled=True, send_enabled=True)
+
+
+def test_profile_send_cap_overrides_server_flags():
+    with pytest.raises(SendDisabled, match="allow_send"):
+        mail.send_draft(_capped_ctx(), "m1")
+    with pytest.raises(SendDisabled, match="allow_send"):
+        calendar.create_event(_capped_ctx(), subject="s",
+                              start="2026-01-01T00:00:00",
+                              end="2026-01-01T01:00:00",
+                              attendees=["user@tenant-a.example"])
+    with pytest.raises(SendDisabled, match="allow_send"):
+        calendar.respond_event(_capped_ctx(), "e1", "accept")
+
+
+def test_profile_send_cap_covers_attendee_bearing_event_update():
+    def handler(request):
+        return httpx.Response(200, json={
+            "id": "e1", "attendees":
+            [{"emailAddress": {"address": "user@tenant-a.example"}}]})
+
+    ctx = _capped_ctx(default_mailbox="me@tenant-a.example")
+    ctx._graphs["p"] = make_graph(handler)
+    with pytest.raises(SendDisabled, match="allow_send"):
+        calendar.update_event(ctx, "e1", subject="s")
 
 
 def test_account_pin_blocks_cross_profile_and_hides_param():

@@ -66,7 +66,7 @@ def create_event(ctx: Ctx, *, subject: str, start: str, end: str,
     must be Teams-enabled)."""
     ctx.require_write()
     if attendees:
-        ctx.require_send()  # invitations are outbound mail (security review)
+        ctx.require_send(account)  # invitations are outbound mail (security review)
     g, mb = ctx.target(account, mailbox)
     payload: dict = {"subject": subject, "start": _when(start, timezone),
                      "end": _when(end, timezone)}
@@ -98,7 +98,7 @@ def respond_event(ctx: Ctx, event_id: str, response: str, *,
         raise ValueError(f"response must be one of {sorted(_RESPONSES)}")
     ctx.require_write()
     if send_response:
-        ctx.require_send()  # the response is outbound mail to the organizer
+        ctx.require_send(account)  # the response is outbound mail to the organizer
     g, mb = ctx.target(account, mailbox)
     payload: dict = {"sendResponse": send_response}
     if comment:
@@ -121,7 +121,7 @@ def update_event(ctx: Ctx, event_id: str, *, subject: str | None = None,
     g, mb = ctx.target(account, mailbox)
     path = _path(mb, f"events/{_seg(event_id, 'event_id')}")
     if g.get(path, params={"$select": "id,attendees"}).get("attendees"):
-        ctx.require_send()  # updates re-notify attendees (security review)
+        ctx.require_send(account)  # updates re-notify attendees (security review)
     patch: dict = {}
     if subject is not None:
         patch["subject"] = subject

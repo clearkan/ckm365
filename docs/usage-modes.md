@@ -75,7 +75,8 @@ Operator cautions for the full tier:
 ## Mode 2 — personal, single account (e.g. colleague@tenant-b.example)
 
 Goal: use the tools for **your own mailbox only**. No admin steps needed —
-the app registration is already admin-consented tenant-wide.
+the app registration is already admin-consented tenant-wide. Self-contained
+step-by-step version with troubleshooting: **`docs/onboarding.md`**.
 
 1. Get the code and `uv sync`.
 2. Create `~/.config/ckm365/profiles.toml` with ONE profile — same
@@ -104,7 +105,10 @@ cannot send as anyone else — including the operator — unless an Exchange
 admin explicitly grants FullAccess/SendAs on a specific mailbox. Omitting
 `--enable-send` (and skipping nothing else) keeps your setup send-free;
 your token cache never holds send-consented refresh tokens acquired by you
-unless you log in after the send tier is exercised for your account.
+unless you log in after the send tier is exercised for your account. To
+make send-free permanent per profile, set `allow_send = false` in
+profiles.toml: the send tier then refuses regardless of server flags, and
+that profile never requests the `Mail.Send` scopes.
 
 One rule: one human per OS account. Caches live under your home directory
 (0700/0600, flock-protected); don't share a login session between people.

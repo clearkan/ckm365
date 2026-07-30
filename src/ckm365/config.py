@@ -13,7 +13,7 @@ from pathlib import Path
 _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
-                 "description"}
+                 "description", "allow_send"}
 AUTH_MODES = ("device_code", "client_credential")
 
 
@@ -29,6 +29,8 @@ class Profile:
     auth: str = "device_code"
     default_mailbox: str | None = None
     description: str = ""  # optional, surfaced to agents via list_accounts
+    allow_send: bool = True  # false hard-caps the send tier for this profile,
+                             # regardless of server flags (defense in depth)
 
     def __post_init__(self) -> None:
         if not _NAME_RE.fullmatch(self.name):
@@ -45,6 +47,11 @@ class Profile:
         if self.auth == "client_credential" and not self.default_mailbox:
             raise ConfigError(
                 f"profile {self.name!r}: client_credential mode requires default_mailbox"
+            )
+        if not isinstance(self.allow_send, bool):
+            # a string like "false" is truthy — the cap must never fail open
+            raise ConfigError(
+                f"profile {self.name!r}: allow_send must be a TOML boolean"
             )
 
     def _env(self, key: str) -> str:
