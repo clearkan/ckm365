@@ -179,10 +179,9 @@ credential is used anywhere.
 
 ## CI / Jenkins: scripted setup → test → teardown
 
-With section 0 done once, the whole cycle is unattended. Jenkins agent
-needs: `uv`, `az` (only if resolving ids at runtime), `pwsh` with
-`Install-Module ExchangeOnlineManagement -Scope CurrentUser`, and these
-credentials/env:
+With section 0 done once, the whole cycle is unattended. Agent installs
+are in **`docs/toolchain.md`** (uv, az, pwsh + ExchangeOnlineManagement —
+incl. the exact tarball recipe); credentials/env:
 
 ```sh
 # from the Jenkins credential store:
