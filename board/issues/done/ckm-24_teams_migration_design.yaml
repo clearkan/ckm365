@@ -1,9 +1,9 @@
 id: CKM-24
 title: Teams migration — settle the architecture question with seanwy BEFORE any code
-column: backlog
-status: backlog
+column: done
+status: done
 created_at: '2026-07-30T14:39:43Z'
-updated_at: '2026-07-30T14:39:43Z'
+updated_at: '2026-07-30T14:52:38Z'
 assignees: []
 description: |-
   DECISION FIRST, no code. The downstream consumer's Teams integration is
@@ -50,4 +50,13 @@ history:
     (tmp/clearkan-teams-requirements.md, local only). Explicitly a
     decision gate: no implementation until seanwy picks (a)/(b)/(c).'
   event: created
+- at: '2026-07-30T14:52:38Z'
+  by: claude
+  details: 'DECIDED by seanwy: option (c) — ckm365 stays Graph-only; only the
+    genuinely Graph-shaped Teams subset moves here (team/channel discovery,
+    app-installation state; meeting provisioning already shipped in 1.1.0).
+    Bot Framework messaging, inbound webhook auth, and replay protection
+    stay downstream. "For now" — (a)/(b) can be revisited if the subset
+    proves insufficient. Follow-on implementation slice filed as CKM-25.'
+  event: moved
 version: 1

@@ -15,6 +15,8 @@ param(
   [switch]$Yes
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/exo-common.ps1"
+Connect-Ckm365Exo   # unattended via CKM365_EXO_* env vars, else interactive
 $upn = "tst.$Suffix@$Domain"
 
 Write-Host "Will create shared mailbox $upn and grant $Grantee FullAccess + SendAs"
