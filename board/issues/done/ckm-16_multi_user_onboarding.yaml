@@ -1,9 +1,9 @@
 id: CKM-16
 title: Multi-user onboarding — let colleague@tenant-b.example use ckm365 for HIS mailbox only
-column: doing
-status: doing
+column: done
+status: done
 created_at: '2026-07-30T00:03:49Z'
-updated_at: '2026-07-30T01:29:52Z'
+updated_at: '2026-07-30T01:47:29Z'
 assignees:
 - claude
 description: |-
@@ -49,5 +49,9 @@ history:
   by: claude
   details: Moved backlog -> doing; assigned to a parallel Fable 5
     subagent working in an isolated git worktree; claude merges+tests
+  event: moved
+- at: '2026-07-30T01:47:29Z'
+  by: claude
+  details: Subagent-implemented (allow_send per-profile cap incl. Auth scope downscale, docs/onboarding.md, 4 tests); merged by claude. Moved doing -> done
   event: moved
 version: 1

@@ -3,6 +3,30 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.2.0] — 2026-07-30
+
+Three features built by parallel review-hardened subagent worktrees,
+merged and live-verified.
+
+### Added
+- **Event-driven mail triggers**: `list_new_messages` / `wait_for_message`
+  read tools built on Graph delta queries (bootstrap windows the initial
+  sync with `$filter=receivedDateTime ge now-60s` — Outlook delta ignores
+  `$deltatoken=latest`, live-tested; token URLs rebuilt server-side so
+  they can never redirect the bearer; runaway paging capped), client-side
+  sender/subject filters, `get_watch_command`, and a `ckm365 watch` CLI
+  that exits 0 on matching mail (run it as a harness background task to
+  wake an agent) or 3 on timeout. Wake pattern live-verified end to end.
+- **Admin CLI**: `ckm365 mailbox grant|revoke|create-test|remove-test`
+  (prints the exact Exchange Online PowerShell, always print-only),
+  `ckm365 app register|add-send-scopes|consent-status` (dry-run by
+  default; `--run` double-confirms), and `ckm365 doctor` (local health
+  checks: profiles, cache perms, logins, likely consent tier).
+- **Per-profile send cap**: `allow_send = false` in profiles.toml blocks
+  the send tier for that profile regardless of server flags AND keeps
+  send scopes out of its token requests. New `docs/onboarding.md`
+  quickstart for additional users joining in personal capacity.
+
 ## [1.1.0] — 2026-07-30
 
 ### Added

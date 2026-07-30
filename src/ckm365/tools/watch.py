@@ -10,19 +10,23 @@ MCP has no server-initiated agent wake, so three read-tier shapes cover
 - get_watch_command — the `ckm365 watch` background-process pattern: the
   process exits when mail matches, and the harness wakes the agent.
 
-Graph delta facts baked in here: the first call (no token) passes
-$deltatoken=latest to start "from now" instead of enumerating the whole
-folder; message delta supports $select but NOT $filter-on-sender,
-$orderby, or $search, so sender/subject filters run client-side; deleted
-or moved items arrive flagged "@removed" and are skipped. The returned
-delta_token is the bare $deltatoken value extracted from the final
-@odata.deltaLink (it encodes the bootstrap's $select); we rebuild the
-request URL ourselves so a caller-supplied token can never point the
-bearer token off graph.microsoft.com.
+Graph delta facts baked in here: OUTLOOK message delta does NOT support
+$deltatoken=latest (that is a directory-resource feature — live-tested:
+Graph silently ignores it and starts enumerating the whole folder), so
+the bootstrap instead filters the initial sync to
+receivedDateTime ge (now - 60s); message delta supports $select but NOT
+$filter-on-sender, $orderby, or $search, so sender/subject filters run
+client-side; deleted or moved items arrive flagged "@removed" and are
+skipped. The returned delta_token is the bare $deltatoken value from the
+final @odata.deltaLink (it encodes the bootstrap's query options); we
+rebuild the request URL ourselves so a caller-supplied token can never
+point the bearer token off graph.microsoft.com. _drain caps pages so no
+delta call can silently turn into a folder-sized crawl.
 """
 
 import shlex
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -36,12 +40,15 @@ from .context import Ctx
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+_MAX_DELTA_PAGES = 50
+
+
 def _drain(g: Graph, path: str, params: dict | None) -> tuple[list[dict], str]:
     """Follow a delta query through its @odata.nextLink pages; return the
     raw items plus the bare $deltatoken from the final @odata.deltaLink."""
     items: list[dict] = []
     url = path
-    while True:
+    for _ in range(_MAX_DELTA_PAGES):
         page = g.get(url, params=params)
         params = None  # nextLink carries the full query string
         items += page.get("value", [])
@@ -52,6 +59,10 @@ def _drain(g: Graph, path: str, params: dict | None) -> tuple[list[dict], str]:
             raise GraphError(0, "unsafe_next_link",
                              "refusing to follow @odata.nextLink off "
                              f"{GRAPH_BASE}: {url[:80]}")
+    else:
+        raise GraphError(0, "delta_pages_exceeded",
+                         f"delta sync exceeded {_MAX_DELTA_PAGES} pages — "
+                         "the token/bootstrap is not windowing correctly")
     link = page.get("@odata.deltaLink") or ""
     token = (parse_qs(urlparse(link).query).get("$deltatoken") or [""])[0]
     if not token:
@@ -68,8 +79,9 @@ def list_new_messages(ctx: Ctx, delta_token: str | None = None, *,
                       mailbox: str | None = None) -> dict:
     """One non-blocking "anything new?" poll via a Graph delta query.
 
-    Without delta_token this BOOTSTRAPS: it returns no messages, just a
-    fresh delta_token marking "now". Feed each call's returned token into
+    Without delta_token this BOOTSTRAPS: the sync window starts roughly
+    now (mail from the last ~60s may already count — the buffer absorbs
+    clock skew so nothing is missed). Feed each call's returned token into
     the next call to get only messages that arrived in between. Each
     watcher owns its own token, so independent agents can watch the same
     folder without interfering. from_addresses (case-insensitive sender
@@ -82,8 +94,15 @@ def list_new_messages(ctx: Ctx, delta_token: str | None = None, *,
         raise ValueError("top must be between 1 and 500")
     g, mb = ctx.target(account, mailbox)
     path = _path(mb, f"mailFolders/{_seg(folder, 'folder')}/messages/delta")
-    params = {"$deltatoken": delta_token} if delta_token else \
-        {"$select": MessageSummary.SELECT, "$deltatoken": "latest"}
+    if delta_token:
+        params = {"$deltatoken": delta_token}
+    else:
+        # Outlook delta has no 'latest' bootstrap: window the initial sync
+        # by server-side receivedDateTime, 60s back to absorb clock skew.
+        floor = (datetime.now(UTC) - timedelta(seconds=60)
+                 ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        params = {"$select": MessageSummary.SELECT,
+                  "$filter": f"receivedDateTime ge {floor}"}
     items, token = _drain(g, path, params)
     froms = {a.strip().lower() for a in from_addresses or []}
     needle = (subject_contains or "").lower()
@@ -151,7 +170,7 @@ def get_watch_command(ctx: Ctx, *, from_addresses: list[str] | None = None,
     means timeout_s passed with no match; 1 means error. Its output is
     counts and truncated ids only, never message content. Each run
     bootstraps its own delta token, so only mail arriving after launch
-    counts.
+    (minus a ~60s clock-skew buffer) counts.
     """
     profile = ctx.profile(account)  # fail fast + bake an explicit account
     cmd = ["uv", "run", "--directory", str(_REPO_ROOT), "ckm365", "watch",

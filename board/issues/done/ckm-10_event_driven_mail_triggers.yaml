@@ -1,9 +1,9 @@
 id: CKM-10
 title: Event-driven mail triggers — delta-based wait tool + watch CLI (phase 2)
-column: doing
-status: doing
+column: done
+status: done
 created_at: '2026-07-29T22:47:59Z'
-updated_at: '2026-07-30T01:29:52Z'
+updated_at: '2026-07-30T01:47:29Z'
 assignees:
 - claude
 description: |-
@@ -57,5 +57,9 @@ history:
   by: claude
   details: Moved backlog -> doing; assigned to a parallel Fable 5
     subagent working in an isolated git worktree; claude merges+tests
+  event: moved
+- at: '2026-07-30T01:47:29Z'
+  by: claude
+  details: Subagent-implemented (watch.py: list_new_messages/wait_for_message on Graph delta w/ deltatoken=latest bootstrap + server-side URL rebuild, get_watch_command, ckm365 watch CLI exit 0/3); 9 offline tests; merged by claude; live background-wake test run in-session. Moved doing -> done
   event: moved
 version: 1

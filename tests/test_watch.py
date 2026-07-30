@@ -43,7 +43,7 @@ def _msg(i, sender="alice@tenant-b.example", subject="hello"):
 
 # --- list_new_messages ------------------------------------------------------
 
-def test_bootstrap_uses_deltatoken_latest():
+def test_bootstrap_windows_initial_sync_by_received_time():
     urls = []
 
     def handler(request):
@@ -54,8 +54,22 @@ def test_bootstrap_uses_deltatoken_latest():
     res = watch.list_new_messages(_ctx(handler))
     assert len(urls) == 1
     assert "messages/delta" in urls[0]
-    assert "deltatoken=latest" in urls[0]  # never enumerate the folder
+    # Outlook delta ignores $deltatoken=latest (live-tested) — the bootstrap
+    # must window by receivedDateTime instead of enumerating the folder.
+    assert "receivedDateTime+ge+" in urls[0] or "receivedDateTime%20ge%20" in urls[0]
+    assert "deltatoken" not in urls[0]
     assert res == {"messages": [], "delta_token": "tok1", "matched": 0}
+
+
+def test_drain_caps_runaway_paging():
+    def handler(request):
+        return httpx.Response(200, json={
+            "value": [], "@odata.nextLink":
+                f"{GRAPH_BASE}/users/u/mailFolders('inbox')/messages/delta"
+                "?$skiptoken=forever"})
+
+    with pytest.raises(GraphError, match="delta_pages_exceeded"):
+        watch.list_new_messages(_ctx(handler))
 
 
 def test_token_round_trip_and_delta_paging():
@@ -135,7 +149,7 @@ def test_wait_for_message_returns_on_first_match():
 
     res = watch.wait_for_message(_ctx(handler), timeout_s=60, poll_s=0)
     assert len(urls) == 3  # returned the moment a message matched
-    assert "deltatoken=latest" in urls[0]
+    assert "receivedDateTime" in urls[0]  # bootstrap window, no token yet
     assert "deltatoken=tok1" in urls[1]
     assert res["timed_out"] is False
     assert res["matched"] == 1
