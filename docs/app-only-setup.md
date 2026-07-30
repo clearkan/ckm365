@@ -1,6 +1,10 @@
 # App-only (client-credential) setup — per-tenant runbook
 
-Status: **prepared, not yet live-verified** (CKM-5). One step is
+Status: **live-verified on one tenant, 2026-07-30** (CKM-5): full
+scripted run — automation-app bootstrap → test mailbox → RBAC scoping →
+cert credential → `doctor` / smoke / full live suite (5/5) app-only,
+delta bootstrap + `wait_for_message` catching a real arrival, and the
+out-of-scope mailbox refused with **403 ErrorAccessDenied**. One step is
 genuinely interactive — the section-0 bootstrap, where the operator
 creates the automation app and assigns its directory role. Everything
 after that is scripted (dry-run by default, explicit apply flags) and can
@@ -129,8 +133,14 @@ security story**:
   negative test as the arbiter: if the out-of-scope mailbox is readable,
   revoke the app-role consent and fall back to RBAC-only.
 
-Start with RBAC-only. `./scripts/add-app-permissions.sh --dry-run` shows
-the app-role plan without touching the tenant.
+**Verified outcome (2026-07-30): RBAC-only is sufficient.** A token
+minted with `.default` and zero Graph roles read the scoped mailbox and
+was refused (403 `ErrorAccessDenied`) on an out-of-scope one — the role
+assignments alone authorize, and no Entra application permission was
+consented at all. That is the strongest possible enterprise-review story
+(there is no tenant-wide grant to argue about). Use
+`add-app-permissions.sh` only if a future workload genuinely needs the
+app-role path; `--dry-run` shows its plan without touching the tenant.
 
 ## 4. Local profile (never the repo)
 

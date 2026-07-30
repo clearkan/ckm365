@@ -113,16 +113,17 @@ that profile never requests the `Mail.Send` scopes.
 One rule: one human per OS account. Caches live under your home directory
 (0700/0600, flock-protected); don't share a login session between people.
 
-## Mode 3 — headless / app-only (planned, CKM-5)
+## Mode 3 — headless / app-only (live-verified, CKM-5)
 
-Client-credential auth (`auth = "client_credential"` + cert/secret via
-`CKM365_<PROFILE>_*` env vars) exists in the code but is not yet
-live-verified: it requires Exchange **RBAC for Applications** scoping on
-the tenant so the app can only reach an allow-listed set of mailboxes.
-The full per-tenant recipe (RBAC-first ordering, certificate credential,
-verification incl. the out-of-scope negative test) is
-**`docs/app-only-setup.md`**. Tracked as CKM-5; do not use app-only mode
-before that scoping is in place.
+Client-credential auth (`auth = "client_credential"` + cert via
+`CKM365_<PROFILE>_*` env vars), with Exchange **RBAC for Applications**
+scoping so the app can only reach an allow-listed set of mailboxes — no
+tenant-wide Graph application permissions at all (verified: the role
+assignments alone authorize, and out-of-scope mailboxes get 403). The
+full per-tenant recipe — automation-app bootstrap, scripted RBAC,
+certificate credential, verification incl. the mandatory out-of-scope
+negative test, and the CI/Jenkins loop — is **`docs/app-only-setup.md`**.
+Never enable an app-only profile before its scope exists.
 
 ## Programmatic use (no MCP, no agent)
 

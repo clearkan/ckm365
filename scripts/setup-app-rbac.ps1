@@ -77,13 +77,15 @@ foreach ($r in $roles) {
   }
 }
 
+# Select InScope explicitly — the default table view drops it on narrow
+# consoles, and it is the entire point of the probe.
 Write-Host "`nauthorization check - in-scope mailbox ($Mailbox):"
 Test-ServicePrincipalAuthorization -Identity $SpObjectId -Resource $Mailbox |
-  Format-Table -AutoSize
+  Select-Object RoleName, InScope | Format-Table -AutoSize
 if ($DenyMailbox) {
   Write-Host "authorization check - OUT-of-scope mailbox ($DenyMailbox):"
   Test-ServicePrincipalAuthorization -Identity $SpObjectId -Resource $DenyMailbox |
-    Format-Table -AutoSize
+    Select-Object RoleName, InScope | Format-Table -AutoSize
   Write-Host 'the deny row(s) above must show InScope False - if not, STOP: the scope is not restricting.'
 } else {
   Write-Host 'WARNING: no -DenyMailbox given - run the negative probe before using the credential.'
