@@ -1,9 +1,11 @@
 # App-only (client-credential) setup — per-tenant runbook
 
-Status: **prepared, not yet live-verified** (CKM-5). Every step that
-touches a tenant is interactive — the operator runs/approves; nothing here
-runs unattended. All addresses/ids below are placeholders; real values
-live in local config only.
+Status: **prepared, not yet live-verified** (CKM-5). One step is
+genuinely interactive — the section-0 bootstrap, where the operator
+creates the automation app and assigns its directory role. Everything
+after that is scripted (dry-run by default, explicit apply flags) and can
+run unattended, including from CI. All addresses/ids below are
+placeholders; real values live in local config only.
 
 App-only mode is for headless daemons (no human to complete a device-code
 flow) — e.g. ClearKan's intake poller. The security story is **Exchange
@@ -18,39 +20,73 @@ verified.** An application permission without a scope can read every
 mailbox in the tenant — there is no "briefly, for testing". Steps below
 are in required order; do 1–3 in one sitting.
 
-## 1. Exchange RBAC scoping (Exchange Online PowerShell, run by the admin)
+## 0. One-time per tenant: the EXO automation app (unattended PowerShell)
 
-Prereqs: the tenant's existing ckm365 app registration
+Everything Exchange-side below (and the CI loop at the end) runs through
+Exchange Online PowerShell. Rather than a human pasting cmdlets, a
+dedicated **automation app registration** lets scripts connect
+app-only with a certificate — `Connect-ExchangeOnline -AppId …
+-CertificateFilePath … -Organization …` — from any shell or Jenkins.
+
+**Two different apps — never merge them:**
+
+| App | What it is | Credential |
+|---|---|---|
+| `ckm365-graph` (existing) | The data-plane app the server runs as; RBAC-scoped to allow-listed mailboxes | cert/secret via `CKM365_<PROFILE>_*` |
+| `ckm365-exo-automation` (this section) | Admin-plane: runs EXO cmdlets (mailbox create/remove, scopes, role assignments) | cert (PFX) via `CKM365_EXO_*` |
+
+Bootstrap (interactive — creating it, consenting `Exchange.ManageAsApp`,
+and assigning the directory role are Privileged-Role-Admin actions and
+stay human; this is the ONE manual step):
+
+```sh
+az login --tenant tenant-a.example --allow-no-subscriptions
+./scripts/create-exo-automation-app.sh --dry-run   # inspect the plan
+./scripts/create-exo-automation-app.sh --yes
+```
+
+It creates the app + SP, generates a cert/PFX under
+`~/.config/ckm365/certs/`, uploads the public cert, admin-consents
+`Exchange.ManageAsApp` (grant-verified), assigns the Entra directory role
+(default `--role exchange-admin`; see least-privilege note below), and
+prints the `CKM365_EXO_*` env block the scripts consume.
+
+**Least privilege:** `--role recipient-admin` (Exchange Recipient
+Administrator) is enough for the CI loop (create/remove `tst.*`
+mailboxes, permissions) but NOT for management scopes / role assignments
+— those need `--role exchange-admin`. For an ongoing Jenkins credential,
+consider two apps: a recipient-admin one the CI holds, and the
+exchange-admin one used rarely (RBAC changes) and kept out of CI. The
+automation credential is admin-grade either way: PFX + password live in
+the credential store, rotate yearly (cert is 365-day).
+
+## 1. Exchange RBAC scoping (scripted)
+
+Prereqs: the tenant's existing ckm365 **Graph** app registration
 (`scripts/create-app-registration.sh`), and a target mailbox — a `tst.*`
 shared mailbox from `scripts/create-test-mailbox.ps1` is ideal for
 verification before scoping the real mailbox in.
 
-```powershell
-Connect-ExchangeOnline -UserPrincipalName admin@tenant-a.example
+```sh
+# ids of the GRAPH app (the one being scoped, not the automation app):
+APP_ID=<graph-app-client-id>          # from profiles.toml
+SP_ID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
 
-# The app's Entra service principal OBJECT id (not the app/client id):
-#   az ad sp show --id <app-client-id> --query id -o tsv
-New-ServicePrincipal -AppId <app-client-id> -ObjectId <sp-object-id> `
-  -DisplayName "ckm365 app-only"
-
-# Management scope covering ONLY the allow-listed mailbox(es):
-New-ManagementScope -Name "ckm365-app-scope" `
-  -RecipientRestrictionFilter "PrimarySmtpAddress -eq 'tst.apponly@tenant-a.example'"
-# (multi-mailbox alternative: -RecipientRestrictionFilter
-#  "PrimarySmtpAddress -like 'tst.*@tenant-a.example'")
-
-# Scoped role assignments — mail and calendar, read-write:
-New-ManagementRoleAssignment -App <sp-object-id> `
-  -Role "Application Mail.ReadWrite" -CustomResourceScope "ckm365-app-scope"
-New-ManagementRoleAssignment -App <sp-object-id> `
-  -Role "Application Calendars.ReadWrite" -CustomResourceScope "ckm365-app-scope"
-
-# Prove the scope BEFORE any token exists — expect InScope True/False:
-Test-ServicePrincipalAuthorization -Identity <sp-object-id> `
-  -Resource tst.apponly@tenant-a.example | Format-Table
-Test-ServicePrincipalAuthorization -Identity <sp-object-id> `
-  -Resource other-user@tenant-a.example | Format-Table   # must be out of scope
+pwsh ./scripts/setup-app-rbac.ps1 -AppId $APP_ID -SpObjectId $SP_ID \
+  -Mailbox tst.apponly@tenant-a.example \
+  -DenyMailbox other-user@tenant-a.example          # dry-run: prints the plan
+pwsh ./scripts/setup-app-rbac.ps1 ... -Apply        # execute
 ```
+
+The script is idempotent and runs, in order: `New-ServicePrincipal`
+(registers the Graph app's SP with EXO), `New-ManagementScope` (filter
+`PrimarySmtpAddress -eq '<mailbox>'` — only the allow-listed mailbox),
+`New-ManagementRoleAssignment` for `Application Mail.ReadWrite` +
+`Application Calendars.ReadWrite` bounded by that scope, then proves the
+result with `Test-ServicePrincipalAuthorization` for both the in-scope
+mailbox (expect `InScope True`) and the `-DenyMailbox` (**must** be
+`False` — stop if not). `scripts/teardown-app-rbac.ps1` reverses it
+(dry-run by default, refuses non-`ckm365-*` names).
 
 ## 2. Certificate credential (preferred over client secret)
 
@@ -140,6 +176,45 @@ from delegated mode in CHANGELOG/board history.
 management scope must come back 403/404 (`ErrorAccessDenied` /
 `ErrorItemNotFound`). If it does not, stop — revisit step 3 before the
 credential is used anywhere.
+
+## CI / Jenkins: scripted setup → test → teardown
+
+With section 0 done once, the whole cycle is unattended. Jenkins agent
+needs: `uv`, `az` (only if resolving ids at runtime), `pwsh` with
+`Install-Module ExchangeOnlineManagement -Scope CurrentUser`, and these
+credentials/env:
+
+```sh
+# from the Jenkins credential store:
+export CKM365_EXO_APP_ID=…            # automation app (section 0)
+export CKM365_EXO_ORG=tenant-a.onmicrosoft.com
+export CKM365_EXO_PFX_PATH=…          # file credential
+export CKM365_EXO_PFX_PASSWORD=…      # secret text
+export CKM365_TENANT_A_APP_CLIENT_CERT_PATH=…        # graph app key (section 2)
+export CKM365_TENANT_A_APP_CLIENT_CERT_THUMBPRINT=…
+```
+
+Pipeline shape (each step is dry-run-by-default; CI passes the
+apply/`-Yes` flags explicitly):
+
+```sh
+pwsh ./scripts/create-test-mailbox.ps1 -Suffix ci-$BUILD_NUMBER \
+  -Domain tenant-a.example -Grantee operator@tenant-a.example -Yes
+pwsh ./scripts/setup-app-rbac.ps1 -AppId $APP_ID -SpObjectId $SP_ID \
+  -Mailbox tst.ci-$BUILD_NUMBER@tenant-a.example \
+  -DenyMailbox other-user@tenant-a.example -Apply
+CKM365_LIVE_ACCOUNT=tenant-a-app CKM365_LIVE_MAILBOX=tst.ci-$BUILD_NUMBER@tenant-a.example \
+  uv run pytest tests/test_live.py -q
+pwsh ./scripts/teardown-app-rbac.ps1 -Apply            # always-run cleanup
+pwsh ./scripts/remove-test-mailbox.ps1 -Suffix ci-$BUILD_NUMBER \
+  -Domain tenant-a.example -Yes
+```
+
+Caveats learned elsewhere in this repo: EXO role assignments and consent
+can lag a minute before Graph honors them (first call to a cold mailbox
+can also 503 — retry); scope filters are evaluated at call time, so
+teardown order (RBAC before mailbox) does not matter for safety, only
+tidiness.
 
 ## Per-tenant repetition
 

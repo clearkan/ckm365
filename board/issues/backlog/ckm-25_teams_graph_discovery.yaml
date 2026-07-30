@@ -1,0 +1,45 @@
+id: CKM-25
+title: Teams option-(c) slice — Graph team/channel discovery + app-installation state
+column: backlog
+status: backlog
+created_at: '2026-07-30T14:52:38Z'
+updated_at: '2026-07-30T14:52:38Z'
+assignees: []
+description: |-
+  Implementation of the CKM-24 decision (option (c)): the only Teams
+  functionality that moves into ckm365 is the genuinely Graph-shaped
+  subset. Bot Framework messaging/webhooks stay downstream, permanently
+  under this option.
+
+  Scope (read-only, new `teams` preset):
+  - Team discovery (`/teams` or `/me/joinedTeams` per auth mode) and
+    channel discovery (`/teams/{id}/channels`) — replaces the downstream
+    consumer hand-configuring team/channel/conversation IDs via env vars.
+  - Teams app installation state (same caveat).
+
+  HARD REQUIREMENT carried from the downstream survey: this is a separate
+  reviewed consent slice with least-privilege READ scopes (candidates:
+  Team.ReadBasic.All, Channel.ReadBasic.All, TeamsAppInstallation
+  read scopes — verify exact names at implementation). It must be kept
+  OUT of the Mail.*/mailbox authorization: a mail --write flag must never
+  imply Teams reach, and the consent script must be a separate deliberate
+  opt-in like add-send-scopes.sh. Consent = tenant-touching = interactive
+  with seanwy.
+
+  Not urgent (downstream said no deadline); pure additive module over
+  graph.py, no structural change expected. Line budget applies.
+dependencies:
+- CKM-24
+parent_id: null
+priority: low
+issue_type: feature
+tags: [teams, graph, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:52:38Z'
+  by: claude
+  details: Issue created in column backlog — the (c)-slice from the CKM-24
+    decision; consent design mirrors the send-tier opt-in pattern
+  event: created
+version: 1

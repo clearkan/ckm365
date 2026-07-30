@@ -1,9 +1,9 @@
 id: CKM-5
 title: Auth — app-only client credential + Exchange RBAC for Applications (interactive)
-column: todo
-status: todo
+column: doing
+status: doing
 created_at: '2026-07-29T21:47:41Z'
-updated_at: '2026-07-30T14:13:08Z'
+updated_at: '2026-07-30T14:52:38Z'
 assignees: []
 description: |-
   INTERACTIVE with seanwy — walk through cmdlets, no unattended tenant changes.
@@ -74,4 +74,28 @@ history:
     primary path and the negative test decides whether add-app-permissions.sh
     is used at all. Remaining work is 100% interactive.'
   event: moved
+- at: '2026-07-30T14:52:38Z'
+  by: claude
+  details: 'Moved to doing — interactive sitting started with seanwy, tenant:
+    intixa (owner''s pick). Following docs/app-only-setup.md, RBAC-only path
+    first.'
+  event: moved
+- at: '2026-07-30T21:40:37Z'
+  by: claude
+  details: 'Approach pivot per seanwy: fully scripted (Jenkins-ready), not
+    hand-run cmdlets. Built: scripts/create-exo-automation-app.sh (one-time
+    bootstrap of a dedicated cert-auth EXO automation app —
+    Exchange.ManageAsApp + Entra directory role, grant-verified, prints
+    CKM365_EXO_* env), scripts/exo-common.ps1 (Connect-Ckm365Exo: app-only
+    from env, interactive fallback), scripts/setup-app-rbac.ps1 /
+    teardown-app-rbac.ps1 (idempotent, dry-run default, positive+NEGATIVE
+    Test-ServicePrincipalAuthorization probes, ckm365-* name guard);
+    create/remove-test-mailbox.ps1 now auto-connect via the helper.
+    docs/app-only-setup.md rewritten: section 0 (automation app, two-app
+    separation, least-privilege recipient-admin option), scripted RBAC
+    section, CI/Jenkins pipeline recipe. NOTE: no pwsh on the dev box —
+    ps1 scripts are balance-checked only; first execution happens where
+    pwsh + ExchangeOnlineManagement exist. Remaining interactive: run the
+    bootstrap (az already authed to intixa).'
+  event: updated
 version: 1
