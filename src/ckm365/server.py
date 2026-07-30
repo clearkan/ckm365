@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, admin
 from .auth import Auth, AuthError, NeedsLogin
 from .config import ConfigError, load_profiles, resolve_profile
 from .graph import GraphError
@@ -58,6 +58,8 @@ def main(argv: list[str] | None = None) -> None:
             p.add_argument("--send", action="store_true",
                            help="also consent to the Mail.Send scopes")
 
+    admin.add_parsers(sub)  # mailbox / app / doctor (CKM-13)
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -70,6 +72,8 @@ def main(argv: list[str] | None = None) -> None:
             return
         if args.command == "watch":
             raise SystemExit(_watch(args))
+        if args.command in admin.COMMANDS:
+            raise SystemExit(admin.run(args))
         profile = resolve_profile(load_profiles(args.profiles), args.profile)
         auth = Auth(profile, read_only=False)
         if args.command == "login":
