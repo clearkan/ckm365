@@ -107,13 +107,15 @@ breaking change — `tests/test_offline.py` carries the import contract.
 
 ## Current state (2026-07-30)
 
-Version 1.5.0. Phases 1-2 done and live-verified on both tenants: 19 tools
+Version 1.6.0. Phases 1-2 done and live-verified on both tenants: 19 tools
 (mail/calendar/watch/accounts), three-tier gating, admin CLI, multi-user
 onboarding, event-driven wake pattern. v1.4.0 added the thread-safety
 contract and the SemVer'd programmatic API (ClearKan pins these tags);
-v1.5.0 fixed the mcp>=2.0 floor and added Ctx.set_graph + py.typed. Board:
-open items are CKM-5 (app-only + RBAC — prep done, interactive sitting
-with owner pending), CKM-18 (SharePoint/Teams-site file sync), CKM-24
-(Teams migration design question — decision gate, no code until the owner
-picks an option). Security + simplification reviews completed; decisions
-on deliberately-kept complexity are recorded in the CKM-14 board history.
+v1.5.0 the mcp>=2.0 floor fix, Ctx.set_graph, py.typed; v1.6.0 the
+app-only mode live-verified (CKM-5: RBAC-only scoping, scripted
+Jenkins-ready EXO automation — see docs/app-only-setup.md +
+docs/toolchain.md). Teams: decision recorded (option (c), CKM-24) — only
+the Graph-shaped subset ever moves here (CKM-25, backlog). Board: open
+items are CKM-18 (SharePoint/Teams-site file sync), CKM-25. Security +
+simplification reviews completed; decisions on deliberately-kept
+complexity are recorded in the CKM-14 board history.

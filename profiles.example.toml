@@ -20,3 +20,14 @@ tenant_id = "00000000-0000-0000-0000-000000000000"
 client_id = "app-registration-client-id"
 auth = "device_code"
 description = "Tenant B tenant (agent persona mailbox: agent@)"
+
+# Headless / app-only (docs/app-only-setup.md — Exchange RBAC scoping FIRST).
+# Same tenant + app registration as the delegated profile; credential via
+# CKM365_TENANT_A_APP_CLIENT_CERT_PATH/_THUMBPRINT env vars.
+#[profiles.tenant-a-app]
+#tenant_id = "00000000-0000-0000-0000-000000000000"
+#client_id = "app-registration-client-id"
+#auth = "client_credential"
+#default_mailbox = "tst.apponly@tenant-a.example"  # the RBAC-scoped mailbox
+#allow_send = false
+#description = "App-only (headless), RBAC-scoped"

@@ -3,6 +3,39 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.6.0] — 2026-07-30
+
+App-only mode is real: CKM-5 closed, live-verified end to end on one
+tenant with a fully scripted (Jenkins-ready) tenant-automation path.
+
+### Added
+- **EXO automation tooling**: `scripts/create-exo-automation-app.sh`
+  (one-time bootstrap of a dedicated cert-auth automation app —
+  `Exchange.ManageAsApp`, grant-verified consent, Entra directory role
+  with a least-privilege `--role recipient-admin` option),
+  `scripts/exo-common.ps1` (`Connect-Ckm365Exo`: unattended from
+  `CKM365_EXO_*` env, interactive fallback), and idempotent
+  dry-run-by-default `scripts/setup-app-rbac.ps1` /
+  `teardown-app-rbac.ps1` (RBAC-for-Applications scoping with mandatory
+  positive + negative `Test-ServicePrincipalAuthorization` probes). The
+  test-mailbox scripts auto-connect through the same helper.
+- `docs/toolchain.md` — install requirements for dev box + CI agent
+  (incl. the pwsh tarball recipe and why there is no direct REST
+  alternative to EXO PowerShell for Exchange admin ops).
+- App-only example profile in `profiles.example.toml`.
+
+### Verified (the release's real content)
+- **RBAC-only authorization works**: an app-only token with ZERO Graph
+  application permissions read the scoped mailbox; an out-of-scope
+  mailbox was refused with 403 `ErrorAccessDenied` — the negative test,
+  at the Graph layer. No tenant-wide grant exists to argue about in
+  enterprise review; `add-app-permissions.sh` stays unused, in reserve.
+- Full live suite 5/5 app-only; delta bootstrap + `wait_for_message`
+  app-only caught a real cross-profile delivery via token round-trip —
+  no behavioral difference vs delegated mode (ClearKan asks 5.1/5.2).
+- `Test-ServicePrincipalAuthorization`: `InScope True` (scoped mailbox) /
+  `False` (operator mailbox) before any token was minted.
+
 ## [1.5.0] — 2026-07-30
 
 ClearKan follow-up release (their v1.4.0 verification report, items 0/A/B),
