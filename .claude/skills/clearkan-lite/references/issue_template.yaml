@@ -1,0 +1,32 @@
+# Skeleton issue YAML — save as
+#   <board-root>/issues/<column>/<key_lower>-<num>_<slug>.yaml
+# where `<num>` is the next scan-derived numeric suffix for the board's
+# project key.
+
+id: XXX-NNN
+title: Short title (< 80 chars)
+created_at: '2026-04-06T12:00:00Z'
+updated_at: '2026-04-06T12:00:00Z'
+
+assignees:
+- board-lead
+description: |-
+  # Heading
+
+  Multi-line markdown description.
+
+dependencies: []
+parent_id: null
+priority: medium
+issue_type: task
+tags: []
+requested_by: board-lead
+due_date: null
+
+history:
+- at: '2026-04-06T12:00:00Z'
+  by: board-lead
+  details: Issue created in column backlog
+  event: created
+
+version: 1

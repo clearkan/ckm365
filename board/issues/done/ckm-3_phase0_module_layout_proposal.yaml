@@ -1,0 +1,39 @@
+id: CKM-3
+title: Phase 0 — propose module layout + helper signatures for approval
+column: done
+status: done
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T22:14:13Z'
+assignees:
+- claude
+description: |-
+  From the reference study, propose the abstraction layer BEFORE writing
+  tools: thin graph.py (httpx client, auth header injection, pagination
+  helper, retry/backoff on 429/503, consistent error mapping) and auth.py
+  (MSAL wrapper, tenant-pinned authority — never `common`). Show module
+  layout and helper signatures to seanwy for approval before implementing
+  tool modules. Flag ClearKan patterns worth lifting.
+dependencies:
+- CKM-2
+parent_id: null
+priority: high
+issue_type: task
+tags: [phase-0, design]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column todo
+  event: created
+- at: '2026-07-29T21:53:30Z'
+  by: claude
+  details: docs/module-layout-proposal.md written (multi-tenant profiles folded
+    in); awaiting seanwy approval before tool implementation
+  event: moved
+- at: '2026-07-29T22:14:13Z'
+  by: claude
+  details: seanwy approved all decisions; layout implemented as proposed;
+    moved doing -> done
+  event: moved
+version: 1

@@ -1,0 +1,35 @@
+id: CKM-5
+title: Auth — app-only client credential + Exchange RBAC for Applications (interactive)
+column: backlog
+status: backlog
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T21:53:30Z'
+assignees: []
+description: |-
+  INTERACTIVE with seanwy — walk through cmdlets, no unattended tenant changes.
+  MULTI-TENANT: RBAC scoping is per tenant; repeat for each profile that
+  needs app-only mode (mailbox lists differ per tenant).
+
+  - Application permissions Mail.ReadWrite + Calendars.ReadWrite, scoped via
+    RBAC for Applications in Exchange Online (NOT legacy Application Access
+    Policy): management scope covering the operator's, ops@, tst.* mailboxes;
+    assign via New-ManagementRoleAssignment
+  - Certificate credential preferred over client secret
+dependencies:
+- CKM-4
+parent_id: null
+priority: high
+issue_type: task
+tags: [auth, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+- at: '2026-07-29T21:53:30Z'
+  by: claude
+  details: Noted per-tenant RBAC scoping (multi-tenant requirement)
+  event: updated
+version: 1

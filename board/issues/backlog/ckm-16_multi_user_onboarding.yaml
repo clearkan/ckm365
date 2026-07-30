@@ -1,0 +1,47 @@
+id: CKM-16
+title: Multi-user onboarding — let colleague@tenant-b.example use ckm365 for HIS mailbox only
+column: backlog
+status: backlog
+created_at: '2026-07-30T00:03:49Z'
+updated_at: '2026-07-30T00:03:49Z'
+assignees: []
+description: |-
+  seanwy (2026-07-30): allow colleague@tenant-b.example to start using this tool for
+  his own mailbox, WITHOUT the ability to send (or act) on seanwy's behalf.
+
+  Why this mostly falls out of the delegated design already:
+  - Each OS user runs their own server with their own profiles.toml and
+    token caches; colleague device-code logs in AS HIMSELF, so every Graph
+    call carries his identity and Exchange enforces his rights. He cannot
+    read or send from seanwy's/ops@/agent@ mailboxes unless Exchange grants
+    him FullAccess/SendAs — nothing ckm365 can widen.
+  - The app registration is a tenant-consented public client, so any
+    tenant-b user can log in with the same client_id: zero tenant work.
+
+  Work actually needed:
+  1. Onboarding doc/steps: install, profiles.toml (same client_id/tenant),
+     ckm365 login — candidate for `ckm365 doctor` / admin CLI (CKM-13)
+  2. Per-profile capability caps in profiles.toml (e.g. allow_send = false)
+     so a config can hard-disable tiers regardless of server flags —
+     defense in depth for cautious deployments
+  3. Verify no shared-machine hazards (caches are per-OS-user home; state
+     dir perms already 0700) and document the one-user-per-OS-account rule
+  4. Related security backlog item: refuse multiple cached accounts per
+     profile (CKM-15) matters more once several humans use the tool
+
+  Explicitly NOT wanted: any proxying of one user's requests through
+  another user's tokens.
+dependencies:
+- CKM-13
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [multi-user, onboarding, security]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T00:03:49Z'
+  by: claude
+  details: Issue created in column backlog from seanwy's request
+  event: created
+version: 1

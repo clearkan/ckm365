@@ -1,0 +1,19 @@
+# Copy to ~/.config/ckm365/profiles.toml (or point CKM365_PROFILES at it).
+# One profile per (tenant, app registration). tenant_id must be the specific
+# tenant GUID (or verified domain) — never common/organizations/consumers.
+# No secrets here: client-credential profiles read
+# CKM365_<PROFILE>_CLIENT_SECRET or _CLIENT_CERT_PATH/_CLIENT_CERT_THUMBPRINT
+# from the environment.
+
+[profiles.tenant-a]
+tenant_id = "00000000-0000-0000-0000-000000000000"
+client_id = "app-registration-client-id"
+auth = "device_code"
+description = "Tenant A work tenant (shared mailbox: ops@)"  # shown to agents
+# default_mailbox = "shared@example.com"  # optional; defaults to signed-in user
+
+[profiles.tenant-b]
+tenant_id = "00000000-0000-0000-0000-000000000000"
+client_id = "app-registration-client-id"
+auth = "device_code"
+description = "Tenant B tenant (agent persona mailbox: agent@)"

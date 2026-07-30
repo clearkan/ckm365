@@ -1,0 +1,43 @@
+board_id: ckm365
+board_name: ckm365 M365 Graph MCP Server
+columns:
+- id: backlog
+  name: Backlog
+  wip_limit: null
+- id: todo
+  name: To Do
+  wip_limit: 10
+- id: doing
+  name: Doing
+  wip_limit: 5
+- id: blocked
+  name: Blocked
+  wip_limit: 5
+- id: done
+  name: Done
+  wip_limit: null
+- id: archived
+  name: Archived
+  wip_limit: null
+  hidden: true
+
+settings:
+  project_key: CKM
+  default_issue_type: task
+  default_priority: medium
+  default_superagent_id: seanwy
+  owner_agent_id: seanwy
+  completed_columns:
+  - done
+  - archived
+  issue_types:
+  - epic
+  - task
+  - bug
+  - feature
+  - improvement
+  issue_filename_prefix: I
+  task_filename_prefix: T
+  timezone: UTC
+
+version: 1

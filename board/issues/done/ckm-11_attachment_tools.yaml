@@ -1,0 +1,33 @@
+id: CKM-11
+title: Attachment tools — list_attachments (read) + add_attachment (draft-only write)
+column: done
+status: done
+created_at: '2026-07-29T23:13:29Z'
+updated_at: '2026-07-29T23:13:29Z'
+assignees:
+- claude
+description: |-
+  seanwy: make sure the initial tooling supports adding attachments.
+
+  - list_attachments: metadata only (id, name, contentType, size, isInline)
+    — never fetches content bytes into agent context
+  - add_attachment: local file path (server runs on the agent's machine),
+    write-gated, refuses non-drafts, 3 MB direct-attach cap with a clear
+    error; contentType guessed from filename when not given
+  - Graph upload sessions for >3 MB deferred to phase 2
+dependencies:
+- CKM-6
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [phase-1, mail]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T23:13:29Z'
+  by: claude
+  details: 'Implemented and live-verified on tenant-a in one pass: draft cycle
+    smoke extended (attach -> list -> verify -> delete, zero residue); 14
+    offline tests pass. Created directly in done'
+  event: created
+version: 1

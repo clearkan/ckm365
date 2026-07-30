@@ -1,0 +1,46 @@
+id: CKM-8
+title: Front doors — server.py (FastMCP/stdio) + agent_tools.py (pydantic-ai) + presets
+column: done
+status: done
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T23:13:29Z'
+assignees: []
+description: |-
+  Two thin front doors over the same plain typed tool functions (Pydantic
+  return models). Nothing Graph-specific in the front doors. Preset groups
+  mail / calendar / all to limit per-session tool count. Read-only default;
+  write tools only with explicit opt-in flag at server start. stdio only —
+  no HTTP listener in phase 1. Log tool name + mailbox + message id, never
+  bodies or tokens.
+dependencies:
+- CKM-6
+- CKM-7
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [phase-1, mcp]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+- at: '2026-07-29T22:14:13Z'
+  by: claude
+  details: Implemented (server.py MCPServer/stdio + agent_tools.py, 11 tools
+    register with read-only annotations); live verification blocked on CKM-4
+  event: moved
+- at: '2026-07-29T22:39:23Z'
+  by: claude
+  details: 'Graph layer now live-verified; remaining: claude mcp add + real
+    client session against the stdio server. Moved blocked -> todo'
+  event: moved
+- at: '2026-07-29T23:13:29Z'
+  by: claude
+  details: 'Live-verified in a real Claude Code session: seanwy ran claude mcp
+    add, server exposed 5 read tools with clean schemas (ctx hidden,
+    docstrings as descriptions), list_mail_folders answered for BOTH profiles
+    via account param. Moved todo -> done'
+  event: moved
+version: 1

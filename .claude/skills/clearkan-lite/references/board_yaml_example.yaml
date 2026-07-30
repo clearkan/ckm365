@@ -1,0 +1,48 @@
+# Sample board.yaml — defines columns, issue types, and the project key.
+# Modern ClearKan boards use scan-derived IDs, so there is no stored
+# `next_issue_number`.
+
+board_id: myproject
+board_name: My Project
+columns:
+- id: backlog
+  name: Backlog
+  wip_limit: null
+- id: todo
+  name: To Do
+  wip_limit: 10
+- id: doing
+  name: Doing
+  wip_limit: 5
+- id: blocked
+  name: Blocked
+  wip_limit: 5
+- id: done
+  name: Done
+  wip_limit: null
+- id: archived
+  name: Archived
+  wip_limit: null
+  hidden: true
+
+settings:
+  project_key: MYP
+  default_issue_type: task
+  default_priority: medium
+  default_superagent_id: board-lead
+  owner_agent_id: board-lead
+  completed_columns:
+  - done
+  - archived
+  issue_types:
+  - epic
+  - user_story
+  - task
+  - bug
+  - feature
+  - improvement
+  issue_filename_prefix: I
+  task_filename_prefix: T
+  timezone: UTC
+
+version: 1

@@ -1,0 +1,44 @@
+id: CKM-12
+title: send_draft tool behind dedicated --enable-send flag; live cross-tenant test
+column: done
+status: done
+created_at: '2026-07-29T23:40:54Z'
+updated_at: '2026-07-29T23:51:44Z'
+assignees:
+- claude
+description: |-
+  seanwy approved enabling full send capability (2026-07-30).
+
+  - send_draft(message_id): POST /messages/{id}/send — refuses non-drafts,
+    gated behind BOTH write_enabled AND a new send_enabled flag
+    (--enable-send on serve, send=True on agent_tools.register)
+  - implement AFTER the security review findings are addressed; reviewer
+    was asked to spec the gate requirements
+  - live verification: fresh draft in agent@tenant-b.example -> send to seanwy;
+    cross-tenant loop ops@tenant-a.example -> agent@tenant-b.example -> reply back,
+    arrivals confirmed from the receiving tenant's profile
+  - ops@tenant-a.example .Shared access verified readable 2026-07-30
+dependencies:
+- CKM-11
+parent_id: null
+priority: high
+issue_type: feature
+tags: [phase-1, mail, send]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T23:40:54Z'
+  by: claude
+  details: Issue created in column todo; blocked behaviorally on the security
+    review completing (runs in parallel)
+  event: created
+- at: '2026-07-29T23:51:44Z'
+  by: claude
+  details: 'Implemented per security-review spec (send tier: scopes, registry,
+    require_send, destructive_hint; consent via add-send-scopes.sh on both
+    tenants, no re-login needed). Live-verified 3/3: agent->seanwy with
+    attachment, ops@tenant-a->agent cross-tenant, agent threaded reply->ops;
+    every arrival confirmed from the receiving profile. SendAs rights were
+    already in place on both shared mailboxes. Moved -> done'
+  event: moved
+version: 1

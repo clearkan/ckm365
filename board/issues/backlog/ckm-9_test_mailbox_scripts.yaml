@@ -1,0 +1,31 @@
+id: CKM-9
+title: Test mailbox scripts — create/remove tst.* shared mailboxes (interactive first run)
+column: backlog
+status: backlog
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T21:47:41Z'
+assignees: []
+description: |-
+  scripts/create-test-mailbox.ps1 + scripts/remove-test-mailbox.ps1 using
+  ExchangeOnlineManagement (New-Mailbox -Shared) — pattern
+  tst.<suffix>@tenant-a.example, no license cost. az/Graph only for Entra-side.
+  Test mailboxes must fall inside the RBAC management scope (or scope filter
+  matches tst.*). First run together interactively.
+
+  Later (not yet): pytest integration suite that provisions a mailbox,
+  exercises createReply -> PATCH -> verify-draft, tears down. Structure
+  tooling now so that is possible; no CI harness yet.
+dependencies:
+- CKM-5
+parent_id: null
+priority: medium
+issue_type: task
+tags: [testing, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+version: 1

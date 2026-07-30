@@ -1,0 +1,46 @@
+id: CKM-6
+title: Phase 1 — mail tools (list/get/folders + draft-only writes)
+column: done
+status: done
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T22:39:23Z'
+assignees: []
+description: |-
+  Read: list_messages (folder, filter, search, top/paging), get_message,
+  list_mail_folders. Write-gated: create_reply_draft, create_reply_all_draft,
+  create_forward_draft, update_draft, create_draft.
+
+  Mail semantics (non-negotiable):
+  - Replies/forwards ALWAYS seeded via Graph createReply/createReplyAll/
+    createForward, then PATCH new content into the returned draft
+  - Only ever PATCH drafts (isDraft=true); never modify delivered messages
+    (stays clear of Mail-Advanced.ReadWrite enforcement, 31 Dec 2026)
+  - Forward recipients go in the createForward request body
+  - Nothing is sent by phase-1 tooling; send_draft separately flagged if built
+  - Optional `mailbox` param on every tool (/users/{mailbox}/...)
+dependencies:
+- CKM-3
+parent_id: null
+priority: high
+issue_type: feature
+tags: [phase-1, mail]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+- at: '2026-07-29T22:14:13Z'
+  by: claude
+  details: Implemented (src/ckm365/tools/mail.py, offline tests pass); live
+    verification blocked on CKM-4 auth setup
+  event: moved
+- at: '2026-07-29T22:39:23Z'
+  by: claude
+  details: 'Live-verified on tenant-a: folders/list/get read path; createReply
+    draft cycle (marker on top, quoted history kept, recipients prefilled,
+    deleted clean); deny-test other-user@ refused 404. Deeper coverage moves to
+    the CKM-9 pytest suite. Moved blocked -> done'
+  event: moved
+version: 1

@@ -1,0 +1,67 @@
+id: CKM-4
+title: Auth — dedicated app registration + delegated device code flow (interactive)
+column: done
+status: done
+created_at: '2026-07-29T21:47:41Z'
+updated_at: '2026-07-29T22:56:12Z'
+assignees:
+- claude
+- seanwy
+description: |-
+  INTERACTIVE with seanwy — propose exact commands, seanwy runs/approves.
+  MULTI-TENANT: repeat per tenant profile (e.g. tenant-a.example AND tenant-b.example) —
+  one dedicated app registration per tenant, one profile entry each.
+
+  - New dedicated app registration (do NOT reuse Claude M365 connector app)
+  - Pin each profile's tenant ID in its MSAL authority URL — NEVER
+    `common` (refresh tokens via common die after ~1h as of mid-2026)
+  - Delegated scopes: Mail.ReadWrite, Mail.ReadWrite.Shared,
+    Calendars.ReadWrite, Calendars.ReadWrite.Shared, offline_access
+  - Confirm full-access on ops@tenant-a.example first
+    (Get-MailboxPermission ops@tenant-a.example)
+  - Token cache: OS credential store, file fallback with 0600 perms
+dependencies:
+- CKM-3
+parent_id: null
+priority: high
+issue_type: task
+tags: [auth, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-29T21:47:41Z'
+  by: claude
+  details: Issue created in column backlog
+  event: created
+- at: '2026-07-29T21:53:30Z'
+  by: claude
+  details: Reworded for multi-tenant profiles (seanwy mid-session requirement)
+  event: updated
+- at: '2026-07-29T22:30:32Z'
+  by: claude
+  details: 'tenant-a tenant done: app registered, 9 delegated scopes, admin
+    consent granted, profile written. Pending: az login to tenant-b.example + re-run
+    script; device-code ckm365 login per profile (seanwy interactive)'
+  event: updated
+- at: '2026-07-29T22:39:23Z'
+  by: claude
+  details: 'tenant-a consent hit AADSTS65001 race (consent recorded stale
+    permission set); re-granted + script now verifies grants scope-by-scope.
+    tenant-a login + smokes all green. Remaining: tenant-b tenant'
+  event: updated
+- at: '2026-07-29T22:47:59Z'
+  by: claude
+  details: 'tenant-b tenant registered, consent verified against grants, profile
+    written. Accounts: operator@tenant-b.example (personal) + agent@tenant-b.example (shared
+    mailbox, AI agent persona with own GitHub/Jira identities — access via
+    .Shared scopes once seanwy has FullAccess). Pending: device-code login'
+  event: updated
+- at: '2026-07-29T22:56:12Z'
+  by: claude
+  details: 'tenant-b login done. Smokes green both tenants: read paths, draft
+    cycles (zero residue), shared agent@tenant-b.example readable (FullAccess was
+    already in place), deny-tests other-user@tenant-a.example + colleague@tenant-b.example both
+    404. One transient Graph 503 on first tenant-b hit, cleared on retry.
+    Delegated auth complete for tenant-a + tenant-b. Moved doing -> done'
+  event: moved
+version: 1
