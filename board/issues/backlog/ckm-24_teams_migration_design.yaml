@@ -1,0 +1,53 @@
+id: CKM-24
+title: Teams migration — settle the architecture question with seanwy BEFORE any code
+column: backlog
+status: backlog
+created_at: '2026-07-30T14:39:43Z'
+updated_at: '2026-07-30T14:39:43Z'
+assignees: []
+description: |-
+  DECISION FIRST, no code. The downstream consumer's Teams integration is
+  slated to move toward this library, but their survey (local git-ignored
+  doc: tmp/clearkan-teams-requirements.md) shows it is NOT a Graph
+  workload: Teams bot messaging talks to the Bot Framework — different
+  token resource and tenant (botframework.com, not the customer tenant),
+  region-variable service URLs delivered IN the inbound activity, inbound
+  webhook JWT validation + replay protection (a server concern this
+  package has no surface for). ckm365 is Graph-only by construction
+  (pinned GRAPH_BASE, tenant-pinned authorities, Graph scope names).
+
+  Options to settle with seanwy:
+  (a) second resource inside ckm365 — generalise Auth/Graph for
+      multi-resource tokens + a bot preset; most reuse, dilutes "minimal
+      Graph MCP server", pushes the line budget;
+  (b) sibling package for the bot side; keeps both minimal, duplicates
+      some plumbing;
+  (c) only the genuinely Graph-shaped subset moves here (team/channel
+      discovery, app-installation state — meeting provisioning already
+      shipped in 1.1.0) and Bot Framework stays downstream. Smallest
+      change.
+
+  (a) and (b) imply very different auth.py refactors — do not start
+  coding until one is chosen.
+
+  Security notes to carry regardless of option: the bot service URL is
+  attacker-influenced input that determines where a bearer token is
+  POSTed (same class as the nextLink host-pinning in graph.py); Teams
+  permissions must be a separate consent tier, never folded into the
+  Mail.*/mailbox authorization; replay protection is max-age + a shared
+  ledger, and the ledger is deployment-coupled state.
+dependencies: []
+parent_id: null
+priority: low
+issue_type: task
+tags: [teams, decision, interactive]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:39:43Z'
+  by: claude
+  details: 'Issue created in column backlog from the downstream survey
+    (tmp/clearkan-teams-requirements.md, local only). Explicitly a
+    decision gate: no implementation until seanwy picks (a)/(b)/(c).'
+  event: created
+version: 1

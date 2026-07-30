@@ -1,0 +1,35 @@
+id: CKM-23
+title: Ship the PEP 561 py.typed marker (verified present in the wheel)
+column: done
+status: done
+created_at: '2026-07-30T14:39:43Z'
+updated_at: '2026-07-30T14:41:47Z'
+assignees:
+- claude
+description: |-
+  ClearKan follow-up ask B: the package is fully annotated but has no
+  py.typed, so consumer type checkers treat every ckm365 import as Any.
+
+  - Add empty src/ckm365/py.typed.
+  - uv build and CONFIRM the marker is inside the wheel (hatchling
+    usually includes it automatically; the silent-omission failure mode
+    is the thing to check). Add force-include only if needed.
+dependencies: []
+parent_id: null
+priority: medium
+issue_type: improvement
+tags: [clearkan, packaging, typing]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-30T14:39:43Z'
+  by: claude
+  details: Issue created in column todo (ClearKan follow-up ask B)
+  event: created
+- at: '2026-07-30T14:41:47Z'
+  by: claude
+  details: 'Done. Empty src/ckm365/py.typed added; uv build run and the
+    wheel inspected — ckm365/py.typed IS present (hatchling includes it
+    automatically; no force-include needed). dist/ is git-ignored.'
+  event: moved
+version: 1

@@ -24,8 +24,8 @@ The following surface is supported and covered by SemVer from v1.4.0
 onward (renames or signature breaks are a major bump; an import-contract
 test in `tests/test_offline.py` fails loudly on drift):
 
-- `ckm365.tools.Ctx` — `create()`, `profile()`, `graph()`, `target()`,
-  `require_write()`, `require_send()`, `close()`, and the
+- `ckm365.tools.Ctx` — `create()`, `profile()`, `graph()`, `set_graph()`,
+  `target()`, `require_write()`, `require_send()`, `close()`, and the
   context-manager form
 - The tool functions in `ckm365.tools.mail`, `.calendar`, `.watch`, and
   `.accounts` — plain typed callables taking `Ctx` as first argument
@@ -95,7 +95,7 @@ headless/app-only mode. Joining a tenant that already runs ckm365?
 | `docs/` | Usage modes, reference notes, design docs |
 | `board/` | Local ClearKan task board (see `.claude/skills/clearkan-lite/`) |
 | `scripts/` | Tenant setup (interactive) + live smoke tests |
-| `tmp/` | Git-ignored scratch, incl. requirements doc and reference clone |
+| `tmp/` | Git-ignored scratch, incl. the requirements doc |
 
 ## License
 

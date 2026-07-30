@@ -1,5 +1,6 @@
-"""CLI and FastMCP/stdio front door. All logging goes to stderr —
-stdout belongs to the MCP protocol."""
+"""CLI and MCPServer/stdio front door (mcp>=2.0 — mcp.server.mcpserver
+does not exist in 1.x). All logging goes to stderr — stdout belongs to
+the MCP protocol."""
 
 import argparse
 import logging

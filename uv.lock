@@ -220,7 +220,7 @@ wheels = [
 
 [[package]]
 name = "ckm365"
-version = "1.4.0"
+version = "1.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -236,7 +236,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "mcp", specifier = ">=1.2" },
+    { name = "mcp", specifier = ">=2.0" },
     { name = "msal", specifier = ">=1.31" },
 ]
 

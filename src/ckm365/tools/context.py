@@ -74,6 +74,18 @@ class Ctx:
                          send=self.send_enabled))
             return self._graphs[p.name]
 
+    def set_graph(self, account: str | None, graph: Graph) -> None:
+        """Install a pre-built Graph for a profile — the supported seam for
+        injecting Graph(transport=httpx.MockTransport(...)) in consumer
+        tests. Validates the profile name; any replaced instance is
+        closed."""
+        p = self.profile(account)
+        with self._graphs_lock:
+            old = self._graphs.get(p.name)
+            self._graphs[p.name] = graph
+        if old is not None:
+            old.close()
+
     def close(self) -> None:
         """Close every cached Graph (their httpx connection pools).
         Idempotent; after close, the next tool call lazily rebuilds."""
