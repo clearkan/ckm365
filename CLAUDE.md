@@ -14,8 +14,14 @@ start; ask seanwy if missing).
   (hash-locked); `mcp` is an optional extra used only by `ckm365 serve`
   (the dev group carries it so source checkouts serve out of the box).
   Any new dependency needs seanwy's explicit sign-off first.
-- **Line budget**: ~600–800 lines for phase 1. If a file outgrows its budget,
-  stop and propose better abstractions.
+- **KISS, not a line budget**: there is no hard line limit (the old
+  ~600–800 phase-1 number is retired — seanwy, 2026-08-01). Simplicity is
+  the goal the number was a proxy for, so optimise for it directly: the
+  obvious implementation over the clever one, one file per concern, no
+  abstraction until a second caller needs it, no configurability nobody
+  asked for. Growth is fine when it buys real capability; ceremony is
+  not. If a module stops being easy to read end to end, that is the
+  signal to stop and propose better abstractions.
 - **Mail writes are draft-only**: seed replies/forwards with Graph
   `createReply`/`createReplyAll`/`createForward`, then PATCH the returned
   draft. Never PATCH a non-draft. No sending in phase 1.
