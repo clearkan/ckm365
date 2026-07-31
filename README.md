@@ -45,11 +45,11 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 ## Principles
 
-- **Lowest possible code** — ~1560 code lines across phases 1–2
-  (docstrings double as MCP tool descriptions and are excluded from that
-  count). Phase 1 alone was ~750 against a 600–800 budget; the growth
-  since is the admin CLI (~315), attachments, watch, and teams. No single
-  module exceeds ~320 lines.
+- **KISS** — the obvious implementation over the clever one, one file per
+  concern, no abstraction before a second caller needs it. Currently
+  ~1560 code lines across phases 1–2 (docstrings double as MCP tool
+  descriptions and are excluded); no single module exceeds ~320. There is
+  no hard line limit — readability is the constraint that matters.
 - **Two core runtime deps only**: `httpx`, `msal`. No
   `msgraph-sdk`. `mcp` is an **optional extra** (`ckm365[mcp]`) needed
   only by the `ckm365 serve` front door — programmatic consumers stay
