@@ -220,12 +220,11 @@ wheels = [
 
 [[package]]
 name = "ckm365"
-version = "1.7.0"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "msal" },
-    { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
@@ -244,7 +243,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.0" },
     { name = "msal", specifier = ">=1.31" },
-    { name = "pydantic", specifier = ">=2" },
 ]
 provides-extras = ["mcp"]
 

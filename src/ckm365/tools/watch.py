@@ -110,7 +110,7 @@ def list_new_messages(ctx: Ctx, delta_token: str | None = None, *,
     for item in items:
         if "@removed" in item:
             continue
-        m = MessageSummary.model_validate(item)
+        m = MessageSummary.from_graph(item)
         if froms and (m.sender.address if m.sender else "").lower() not in froms:
             continue
         if needle and needle not in (m.subject or "").lower():

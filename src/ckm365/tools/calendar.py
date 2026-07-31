@@ -49,7 +49,7 @@ def get_event(ctx: Ctx, event_id: str, *, timezone: str | None = None,
     g, mb = ctx.target(account, mailbox)
     data = g.get(_path(mb, f"events/{_seg(event_id, 'event_id')}"),
                  params={"$select": Event.SELECT}, headers=headers)
-    return Event.model_validate(data)
+    return Event.from_graph(data)
 
 
 def create_event(ctx: Ctx, *, subject: str, start: str, end: str,
@@ -79,7 +79,7 @@ def create_event(ctx: Ctx, *, subject: str, start: str, end: str,
         payload["isOnlineMeeting"] = True
         payload["onlineMeetingProvider"] = "teamsForBusiness"
     created = g.post(_path(mb, "events"), json=payload)
-    return Event.model_validate(created)
+    return Event.from_graph(created)
 
 
 _RESPONSES = {"accept": "accept", "tentative": "tentativelyAccept",
@@ -135,4 +135,4 @@ def update_event(ctx: Ctx, event_id: str, *, subject: str | None = None,
     if not patch:
         raise ValueError("nothing to update")
     updated = g.patch(path, json=patch)
-    return Event.model_validate(updated)
+    return Event.from_graph(updated)

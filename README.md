@@ -29,7 +29,9 @@ test in `tests/test_offline.py` fails loudly on drift):
   context-manager form
 - The tool functions in `ckm365.tools.mail`, `.calendar`, `.watch`, and
   `.accounts` — plain typed callables taking `Ctx` as first argument
-- The pydantic models they return (`ckm365.models`)
+- The models they return (`ckm365.models` — stdlib dataclasses;
+  pydantic v2 treats them as first-class via `TypeAdapter`, which is
+  what the MCP SDK and pydantic-ai do, and a test pins that contract)
 - `ckm365.graph.Graph(transport=...)` for httpx `MockTransport` injection
   in consumer test suites
 
@@ -38,14 +40,14 @@ helpers) may change in any release. Worked example:
 `docs/usage-modes.md` → "Programmatic use (no MCP, no agent)".
 
 Installing as a dependency: `ckm365 @ git+<repo-url>@vX.Y.Z` pulls only
-the core (`httpx`/`msal`/`pydantic`); add the `[mcp]` extra only if you
-run `ckm365 serve` from that environment.
+the core (`httpx`/`msal` — nothing else, not even pydantic); add the
+`[mcp]` extra only if you run `ckm365 serve` from that environment.
 
 ## Principles
 
 - **Lowest possible code** — ~750 code lines (docstrings double as MCP tool
   descriptions and are excluded from that count).
-- **Three core runtime deps only**: `httpx`, `msal`, `pydantic`. No
+- **Two core runtime deps only**: `httpx`, `msal`. No
   `msgraph-sdk`. `mcp` is an **optional extra** (`ckm365[mcp]`) needed
   only by the `ckm365 serve` front door — programmatic consumers stay
   unpinned from the MCP SDK's majors. Managed with `uv`, hash-locked.
@@ -114,8 +116,9 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 Phases 1–2 complete and live-verified on two tenants: 19 tools (mail /
 calendar / watch / accounts), three-tier gating, admin CLI, live
-integration suite, and — as of v1.4.0 — the thread-safety contract and
-the supported programmatic API (SemVer'd; releases are tagged `vX.Y.Z`
-for downstream pinning). Security + simplification reviews done. Next:
-app-only RBAC mode (CKM-5, prep done, interactive sitting pending),
-SharePoint/Teams file sync (CKM-18).
+integration suite, the thread-safety contract and supported programmatic
+API (SemVer'd; releases are tagged `vX.Y.Z` for downstream pinning), and
+app-only mode with Exchange RBAC-only scoping (v1.6.0, incl. the
+out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
+dataclass models. Security + simplification reviews done. Next:
+SharePoint/Teams file sync (CKM-18), Teams Graph-shaped subset (CKM-25).

@@ -192,7 +192,7 @@ def test_get_watch_command_bakes_filters_and_repo_path():
 # --- ckm365 watch CLI -------------------------------------------------------
 
 def _fake_result(matched, timed_out):
-    msgs = [MessageSummary.model_validate(_msg(1))] if matched else []
+    msgs = [MessageSummary.from_graph(_msg(1))] if matched else []
     return {"messages": msgs, "delta_token": "tok9",
             "matched": matched, "timed_out": timed_out}
 
