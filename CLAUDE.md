@@ -10,8 +10,10 @@ start; ask seanwy if missing).
 
 - **Multi-tenant**: never assume one tenant. Named profiles, each with a
   pinned tenant-ID authority — never the `common` authority.
-- **Deps**: exactly `mcp`, `msal`, `httpx` via uv (hash-locked). Any new
-  dependency needs seanwy's explicit sign-off first.
+- **Deps**: core is exactly `httpx`, `msal`, `pydantic` via uv
+  (hash-locked); `mcp` is an optional extra used only by `ckm365 serve`
+  (the dev group carries it so source checkouts serve out of the box).
+  Any new dependency needs seanwy's explicit sign-off first.
 - **Line budget**: ~600–800 lines for phase 1. If a file outgrows its budget,
   stop and propose better abstractions.
 - **Mail writes are draft-only**: seed replies/forwards with Graph

@@ -37,12 +37,19 @@ Everything else (`auth.py` internals, `server.py`, underscore-prefixed
 helpers) may change in any release. Worked example:
 `docs/usage-modes.md` → "Programmatic use (no MCP, no agent)".
 
+Installing as a dependency: `ckm365 @ git+<repo-url>@vX.Y.Z` pulls only
+the core (`httpx`/`msal`/`pydantic`); add the `[mcp]` extra only if you
+run `ckm365 serve` from that environment.
+
 ## Principles
 
 - **Lowest possible code** — ~750 code lines (docstrings double as MCP tool
   descriptions and are excluded from that count).
-- **Three runtime deps only**: `mcp`, `msal`, `httpx`. No `msgraph-sdk`.
-  Managed with `uv`, hash-locked. New deps need explicit sign-off.
+- **Three core runtime deps only**: `httpx`, `msal`, `pydantic`. No
+  `msgraph-sdk`. `mcp` is an **optional extra** (`ckm365[mcp]`) needed
+  only by the `ckm365 serve` front door — programmatic consumers stay
+  unpinned from the MCP SDK's majors. Managed with `uv`, hash-locked.
+  New deps need explicit sign-off.
 - **Tiered capability, deny by default** — see the table below. Sending is
   never part of the default consent set.
 - **Draft-only mail writes** — replies/forwards seeded via Graph

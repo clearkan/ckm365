@@ -1,6 +1,7 @@
 """Offline sanity tests — no tenant, no network (httpx.MockTransport)."""
 
 import inspect
+import sys
 import threading
 
 import httpx
@@ -385,6 +386,20 @@ def test_blessed_api_import_contract():
                    "__exit__"):
         assert callable(getattr(Ctx, method)), method
     assert "transport" in inspect.signature(Graph.__init__).parameters
+
+
+def test_serve_without_mcp_exits_actionably(monkeypatch):
+    """mcp is an optional extra (CKM-26): without it, `ckm365 serve` must
+    die with the install hint, not a bare ImportError."""
+    import argparse
+
+    from ckm365 import server
+
+    for mod in [m for m in list(sys.modules) if m == "mcp" or m.startswith("mcp.")]:
+        monkeypatch.setitem(sys.modules, mod, None)  # forces ImportError
+    monkeypatch.setitem(sys.modules, "mcp", None)
+    with pytest.raises(SystemExit, match=r"ckm365\[mcp\]"):
+        server._serve(argparse.Namespace())
 
 
 def test_set_graph_injection_seam():

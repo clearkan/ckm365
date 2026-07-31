@@ -18,8 +18,9 @@ own.
 
 ## The five steps
 
-1. **Get the code and sync deps** (exactly `mcp`, `msal`, `httpx`,
-   hash-locked):
+1. **Get the code and sync deps** (`httpx`, `msal`, `pydantic` core plus
+   the `mcp` extra for serving — a source-checkout `uv sync` brings all
+   of them, hash-locked):
 
    ```sh
    git clone <repo-url> ckm365 && cd ckm365

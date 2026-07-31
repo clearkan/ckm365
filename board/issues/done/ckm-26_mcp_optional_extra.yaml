@@ -1,0 +1,58 @@
+id: CKM-26
+title: Make mcp an optional extra — core deps become httpx+msal (ClearKan blocker)
+column: done
+status: done
+created_at: '2026-07-31T03:12:41Z'
+updated_at: '2026-07-31T03:15:19Z'
+assignees:
+- claude
+description: |-
+  ClearKan blocker (tmp/clearkan-mcp-dependency-blocker.md +
+  tmp/clearkan-mcp-optional-followup.md, approved by seanwy): the v1.5.0
+  mcp>=2.0 floor fix was correct but mcp is a HARD dep, so the floor
+  propagates to pure programmatic consumers. ClearKan's own board MCP
+  server needs mcp 1.x (mcp.server.fastmcp was removed in 2.0), so
+  clearkan[m365] is uninstallable while ckm365 hard-requires mcp>=2.0.
+  The MCP ecosystem is three unaligned moving parts right now (spec
+  2026-07-28, mcp SDK 2.0, standalone fastmcp 3.x) — the constraint would
+  keep recurring.
+
+  - pyproject: dependencies = httpx+msal; [project.optional-dependencies]
+    mcp = ["mcp>=2.0"]. Keep mcp in the dev group so `uv run ckm365
+    serve` from a source checkout (the live Claude Code registrations!)
+    still works with a plain `uv sync`.
+  - server.py _serve: catch ImportError on the lazy import, exit with an
+    actionable "install ckm365[mcp]" message.
+  - Offline test for that error path; wheel metadata verified
+    (Requires-Dist ... extra == 'mcp').
+  - Docs: README principles, CLAUDE.md deps rule, onboarding.
+dependencies: []
+parent_id: null
+priority: high
+issue_type: improvement
+tags: [clearkan, packaging]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-31T03:12:41Z'
+  by: claude
+  details: Issue created in column doing (ClearKan blocker, seanwy approved
+    the split)
+  event: created
+- at: '2026-07-31T03:15:19Z'
+  by: claude
+  details: 'Done. mcp moved to [project.optional-dependencies] mcp (>=2.0
+    floor preserved); core deps httpx/msal/PYDANTIC — pydantic was always a
+    direct dep (models.py) but undeclared, riding in via mcp; the clean-venv
+    acceptance test caught the break and it is now declared (flagged to
+    seanwy). serve exits 1 with an install-hint message when mcp is absent
+    (offline test added). dev group mirrors the extra so uv sync / live
+    Claude Code registrations serve unchanged (verified import in dev env).
+    VERIFIED: wheel metadata (Requires-Dist httpx/msal/pydantic;
+    mcp;extra==mcp); clean venv WITHOUT extra -> ckm365.tools/models import
+    OK, mcp absent, ckm365 serve exit 1 with actionable message; same venv
+    WITH [mcp] extra -> mcp.server.mcpserver imports. Offline suite 61
+    passed. Docs: README principles + install note, CLAUDE.md deps rule,
+    onboarding step 1.'
+  event: moved
+version: 1
