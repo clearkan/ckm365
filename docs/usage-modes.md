@@ -125,6 +125,38 @@ certificate credential, verification incl. the mandatory out-of-scope
 negative test, and the CI/Jenkins loop — is **`docs/app-only-setup.md`**.
 Never enable an app-only profile before its scope exists.
 
+## The `teams` preset — read-only discovery, separate consent
+
+Turns names into the team/channel ids other systems otherwise hard-code
+(`list_teams` → `list_channels` / `list_installed_apps`). Deliberately
+narrow, per the CKM-24 decision: ckm365 is a Graph client, so Teams *bot
+messaging* — Bot Framework endpoints, inbound activity validation, replay
+protection — is not here and is not planned.
+
+```sh
+./scripts/add-teams-scopes.sh --dry-run   # then --yes; per tenant
+uv run ckm365 login <profile>             # re-login to pick up the scopes
+uv run python scripts/live-smoke.py <profile> --teams
+claude mcp add --scope user ckm365 -- uv run --directory <repo> \
+  ckm365 serve --preset mail,calendar,teams
+```
+
+Three things to know:
+
+- **Its own consent tier.** Delegated `Team.ReadBasic.All`,
+  `Channel.ReadBasic.All`, `TeamsAppInstallation.ReadForTeam` — added by
+  a separate script that merges into the app's existing permissions.
+  Mail/calendar tiers never imply Teams reach, and `teams` has no write
+  or send tier.
+- **Org-scoped, not mailbox-scoped.** These tools take no `mailbox`
+  parameter; they read the tenant's Teams graph, not a person's mail.
+- **Delegated is the safe mode.** A delegated token sees only the
+  signed-in user's joined teams (`/me/joinedTeams`). App-only has no
+  "me", so it lists every team in the tenant (`/teams`) — and Exchange
+  RBAC-for-Applications does NOT constrain Teams, so there is no
+  mailbox-style scope to fall back on. If a headless caller needs Teams,
+  scope it per team with Teams resource-specific consent (RSC).
+
 ## Programmatic use (no MCP, no agent)
 
 For daemons and plain scripts (ClearKan's intake poller is the canonical

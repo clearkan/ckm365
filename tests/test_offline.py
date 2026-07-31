@@ -12,7 +12,7 @@ from ckm365.config import ConfigError, Profile, load_profiles, resolve_profile
 from ckm365.graph import GRAPH_BASE, Graph, GraphError, mailbox_path
 from ckm365.models import Event, Message
 from ckm365.tools import (Ctx, SendDisabled, WriteDisabled, bind, calendar,
-                          mail, tools_for)
+                          mail, teams, tools_for)
 
 
 class FakeAuth:
@@ -225,8 +225,15 @@ def test_tools_for_presets():
     assert len(tools_for(["mail"])) == 8  # incl. list_accounts (ALWAYS)
     assert len(tools_for(["mail"], write=True)) == 13
     assert len(tools_for(["mail"], write=True, send=True)) == 14
+    assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
+    assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
+    # "all" deliberately excludes teams — it has its own consent tier, so
+    # it must be asked for by name rather than appearing in every session.
     assert len(tools_for(["all"], write=True)) == 18
     assert len(tools_for(["all"], write=True, send=True)) == 19
+    assert teams.list_teams not in tools_for(["all"], write=True, send=True)
+    assert teams.list_teams in tools_for(["all", "teams"])
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 22
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -348,6 +355,84 @@ def test_bind_hides_ctx_from_signature():
     assert "ctx" not in bound.__annotations__
 
 
+# --- teams discovery (CKM-25) ---------------------------------------------
+
+def _teams_ctx(auth="device_code", **kw):
+    p = Profile(name="p", tenant_id="t", client_id="c", auth=auth,
+                **({"default_mailbox": "shared@x.com"}
+                   if auth == "client_credential" else {}))
+    return Ctx(profiles={"p": p}, **kw)
+
+
+def test_list_teams_endpoint_follows_auth_mode():
+    """Delegated tokens have a /me; app-only tokens do not — the listing
+    endpoint must differ or app-only 400s on /me/joinedTeams."""
+    seen = {}
+
+    def handler(request):
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"value": [
+            {"id": "t1", "displayName": "Ops", "isArchived": False}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    got = teams.list_teams(ctx)
+    assert seen["path"] == "/v1.0/me/joinedTeams"
+    assert got[0].id == "t1" and got[0].name == "Ops"
+    assert got[0].is_archived is False
+
+    app_ctx = _teams_ctx(auth="client_credential")
+    app_ctx.set_graph("p", make_graph(handler))
+    teams.list_teams(app_ctx)
+    assert seen["path"] == "/v1.0/teams"
+
+
+def test_list_channels_projects_and_encodes_team_id():
+    seen = {}
+
+    def handler(request):
+        seen["path"] = request.url.raw_path.decode()  # .path is decoded
+        return httpx.Response(200, json={"value": [
+            {"id": "19:abc", "displayName": "General",
+             "membershipType": "standard", "email": "gen@x.com"}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    ch = teams.list_channels(ctx, "19:abc@thread.tacv2")
+    assert ch[0].id == "19:abc" and ch[0].membership_type == "standard"
+    assert ch[0].email == "gen@x.com"
+    assert "19%3Aabc%40thread.tacv2" in seen["path"]  # one encoded segment
+
+    # A traversal-shaped id stays a single segment (encoded, not rejected —
+    # the same contract as message ids); a blank one is refused.
+    teams.list_channels(ctx, "bad/../id")
+    assert "/.." not in seen["path"] and "bad%2F..%2Fid" in seen["path"]
+    with pytest.raises(ValueError, match="team_id"):
+        teams.list_channels(ctx, "  ")
+
+
+def test_list_installed_apps_flattens_expanded_definition():
+    def handler(request):
+        assert "expand" in str(request.url)
+        return httpx.Response(200, json={"value": [
+            {"id": "inst1", "teamsAppDefinition": {
+                "displayName": "ClearKan", "version": "1.2",
+                "teamsAppId": "app-guid"}}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    app = teams.list_installed_apps(ctx, "t1")[0]
+    assert (app.id, app.name, app.version, app.teams_app_id) == \
+        ("inst1", "ClearKan", "1.2", "app-guid")
+
+
+def test_teams_tools_have_no_mailbox_parameter():
+    """Org-scoped, not mailbox-scoped — a mailbox arg would be a lie."""
+    for fn in (teams.list_teams, teams.list_channels,
+               teams.list_installed_apps):
+        assert "mailbox" not in inspect.signature(fn).parameters, fn.__name__
+
+
 # --- thread safety + lifecycle (CKM-19) -----------------------------------
 
 def test_concurrent_graph_calls_build_one_graph():
@@ -396,9 +481,9 @@ def test_blessed_api_import_contract():
     API"). Downstream consumers (ClearKan) pin to these names — a rename
     here is a SemVer-MAJOR change, and this test is the loud failure."""
     from ckm365.graph import Graph, GraphError                     # noqa: F401
-    from ckm365.models import (Attachment, Draft, Event,           # noqa: F401
-                               EventSummary, MailFolder, Message,
-                               MessageSummary)
+    from ckm365.models import (Attachment, Channel, Draft,         # noqa: F401
+                               Event, EventSummary, InstalledApp,
+                               MailFolder, Message, MessageSummary, Team)
     from ckm365.tools import Ctx, SendDisabled, WriteDisabled      # noqa: F401
     from ckm365.tools.accounts import list_accounts                # noqa: F401
     from ckm365.tools.calendar import (create_event, get_event,    # noqa: F401
@@ -409,6 +494,8 @@ def test_blessed_api_import_contract():
                                    create_reply_draft, get_message,
                                    list_attachments, list_mail_folders,
                                    list_messages, send_draft, update_draft)
+    from ckm365.tools.teams import (list_channels,                 # noqa: F401
+                                    list_installed_apps, list_teams)
     from ckm365.tools.watch import (get_watch_command,             # noqa: F401
                                     list_new_messages,
                                     wait_for_message)

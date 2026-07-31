@@ -71,7 +71,8 @@ session; everything else worth knowing is one hop from here.
 `config.py` profiles/TOML → `auth.py` MSAL + locked token caches →
 `graph.py` httpx client, retry, paging, errors → `models.py` dataclass
 projections → `tools/` (context: Ctx/gating/bind/pull; mail; calendar;
-watch: delta triggers; accounts) → front doors `server.py` (CLI: serve/
+watch: delta triggers; accounts; teams: org-scoped discovery, read-only,
+separate consent tier) → front doors `server.py` (CLI: serve/
 watch/login/logout + admin.py: mailbox/app/doctor) and `agent_tools.py`
 (pydantic-ai). Tests: `tests/test_offline.py` + per-module files;
 `tests/test_live.py` is the env-gated live suite.
@@ -84,7 +85,7 @@ before touching it.
 The SUPPORTED programmatic surface (SemVer'd from v1.4.0, consumed by
 ClearKan): `ckm365.tools.Ctx` (create/profile/graph/target/require_*/
 close/context-manager), the tool functions in
-`ckm365.tools.{mail,calendar,watch,accounts}`, the models they return,
+`ckm365.tools.{mail,calendar,watch,accounts,teams}`, the models they return,
 and `Graph(transport=...)` for test injection. Renaming any of these is a
 breaking change — `tests/test_offline.py` carries the import contract.
 
@@ -107,10 +108,10 @@ breaking change — `tests/test_offline.py` carries the import contract.
 - First Graph hit on a cold mailbox can 503 (`ErrorInternalServerTransient`)
   past the retry budget — just retry the operation.
 
-## Current state (2026-07-30)
+## Current state (2026-08-01)
 
-Version 1.6.0. Phases 1-2 done and live-verified on both tenants: 19 tools
-(mail/calendar/watch/accounts), three-tier gating, admin CLI, multi-user
+Version 2.1.0. Phases 1-2 done and live-verified on both tenants: 22 tools
+(mail/calendar/watch/accounts/teams), three-tier gating, admin CLI, multi-user
 onboarding, event-driven wake pattern. v1.4.0 added the thread-safety
 contract and the SemVer'd programmatic API (ClearKan pins these tags);
 v1.5.0 the mcp>=2.0 floor fix, Ctx.set_graph, py.typed; v1.6.0 the
@@ -120,8 +121,9 @@ docs/toolchain.md); v1.7.0 made mcp an optional extra (the dev
 group still carries mcp so source checkouts serve out of the box); v2.0.0
 disconnected pydantic entirely — models are stdlib dataclasses
 (pydantic-compatible via TypeAdapter, test-pinned), core deps are exactly
-httpx/msal. Teams: decision recorded (option (c), CKM-24) — only
-the Graph-shaped subset ever moves here (CKM-25, backlog). Board: open
-items are CKM-18 (SharePoint/Teams-site file sync), CKM-25. Security +
+httpx/msal; v2.1.0 added the teams discovery preset (CKM-25 — the option
+(c) slice: read-only, org-scoped, SEPARATE consent tier). Teams bot
+messaging stays out of this repo by decision (CKM-24). Board: the only
+open item is CKM-18 (SharePoint/Teams-site file sync). Security +
 simplification reviews completed; decisions on deliberately-kept
 complexity are recorded in the CKM-14 board history.

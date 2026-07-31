@@ -27,8 +27,8 @@ test in `tests/test_offline.py` fails loudly on drift):
 - `ckm365.tools.Ctx` — `create()`, `profile()`, `graph()`, `set_graph()`,
   `target()`, `require_write()`, `require_send()`, `close()`, and the
   context-manager form
-- The tool functions in `ckm365.tools.mail`, `.calendar`, `.watch`, and
-  `.accounts` — plain typed callables taking `Ctx` as first argument
+- The tool functions in `ckm365.tools.mail`, `.calendar`, `.watch`,
+  `.accounts`, and `.teams` — plain typed callables taking `Ctx` first
 - The models they return (`ckm365.models` — stdlib dataclasses;
   pydantic v2 treats them as first-class via `TypeAdapter`, which is
   what the MCP SDK and pydantic-ai do, and a test pins that contract)
@@ -45,8 +45,11 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 ## Principles
 
-- **Lowest possible code** — ~750 code lines (docstrings double as MCP tool
-  descriptions and are excluded from that count).
+- **Lowest possible code** — ~1560 code lines across phases 1–2
+  (docstrings double as MCP tool descriptions and are excluded from that
+  count). Phase 1 alone was ~750 against a 600–800 budget; the growth
+  since is the admin CLI (~315), attachments, watch, and teams. No single
+  module exceeds ~320 lines.
 - **Two core runtime deps only**: `httpx`, `msal`. No
   `msgraph-sdk`. `mcp` is an **optional extra** (`ckm365[mcp]`) needed
   only by the `ckm365 serve` front door — programmatic consumers stay
@@ -72,6 +75,14 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
 on top of the base consent from `scripts/create-app-registration.sh`.
+
+The `teams` preset (read-only discovery: `list_teams`, `list_channels`,
+`list_installed_apps`) sits **outside** that ladder on its own consent
+tier (`scripts/add-teams-scopes.sh`) — a mail `--write` flag never implies
+the ability to enumerate Teams, and the preset has no write tier at all.
+It is also excluded from `--preset all` on purpose: name it explicitly
+(`--preset mail,calendar,teams`) so it never appears in a session that
+has not consented to it.
 
 ## Setup
 
@@ -114,11 +125,11 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 19 tools (mail /
-calendar / watch / accounts), three-tier gating, admin CLI, live
+Phases 1–2 complete and live-verified on two tenants: 22 tools (mail /
+calendar / watch / accounts / teams), three-tier gating, admin CLI, live
 integration suite, the thread-safety contract and supported programmatic
 API (SemVer'd; releases are tagged `vX.Y.Z` for downstream pinning), and
 app-only mode with Exchange RBAC-only scoping (v1.6.0, incl. the
 out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
-dataclass models. Security + simplification reviews done. Next:
-SharePoint/Teams file sync (CKM-18), Teams Graph-shaped subset (CKM-25).
+dataclass models; v2.1.0 adds read-only Teams discovery. Security +
+simplification reviews done. Next: SharePoint/Teams file sync (CKM-18).

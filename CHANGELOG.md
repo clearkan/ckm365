@@ -3,6 +3,41 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.1.0] — 2026-08-01
+
+### Added
+- **`teams` preset — read-only Teams discovery** (CKM-25, the option-(c)
+  slice from the CKM-24 decision): `list_teams`, `list_channels`,
+  `list_installed_apps`, plus `Team`/`Channel`/`InstalledApp` models.
+  Turns names into the team/channel ids that downstream systems
+  otherwise hard-code in env vars. 22 tools total.
+- `scripts/add-teams-scopes.sh` — the separate, deliberate consent tier
+  (delegated `Team.ReadBasic.All`, `Channel.ReadBasic.All`,
+  `TeamsAppInstallation.ReadForTeam`), dry-run by default, **merging**
+  into the app's existing permissions rather than replacing them, with
+  the usual grant-verified consent loop.
+- `scripts/live-smoke.py --teams` — exercises the three reads and
+  reports a missing consent tier as a skip, not a failure.
+
+### Notes
+- **Teams consent is never implied by mail/calendar.** The preset has no
+  write or send tier, and its scopes live outside the read → `--write` →
+  `--enable-send` ladder. `--preset all` also **excludes** teams by
+  design (it now means mail+calendar): a preset needing its own consent
+  must be named explicitly, so existing sessions gain no tools that would
+  403 and no extra schema in their token budget.
+- **Auth-mode asymmetry, by design:** delegated tokens list only the
+  signed-in user's teams (`/me/joinedTeams`); app-only has no "me" and
+  lists every team in the tenant (`/teams`). Exchange
+  RBAC-for-Applications does NOT constrain Teams, so there is no
+  mailbox-style scope to fall back on — prefer delegated, or use Teams
+  resource-specific consent (RSC) per team.
+- Bot Framework messaging remains out of scope permanently under the
+  CKM-24 decision.
+- **Live verification is PENDING the consent step** (tenant-touching, so
+  the owner runs it): offline tests and the pre-consent 403 path are
+  verified; the post-consent reads are not yet.
+
 ## [2.0.0] — 2026-07-31
 
 **Breaking:** pydantic is disconnected from the core (CKM-27). Models in

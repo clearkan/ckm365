@@ -183,6 +183,59 @@ class EventSummary:
 
 
 @dataclass
+class Team:
+    SELECT: ClassVar[str] = "id,displayName,description,isArchived,webUrl"
+    id: str
+    name: str = ""
+    description: str | None = ""
+    is_archived: bool = False
+    web_url: str | None = None
+
+    @classmethod
+    def from_graph(cls, d: dict[str, Any]) -> "Team":
+        return cls(id=d["id"], name=d.get("displayName") or "",
+                   description=d.get("description") or "",
+                   is_archived=bool(d.get("isArchived")),
+                   web_url=d.get("webUrl"))
+
+
+@dataclass
+class Channel:
+    SELECT: ClassVar[str] = ("id,displayName,description,email,webUrl,"
+                             "membershipType")
+    id: str
+    name: str = ""
+    description: str | None = ""
+    email: str | None = None
+    web_url: str | None = None
+    membership_type: str = ""
+
+    @classmethod
+    def from_graph(cls, d: dict[str, Any]) -> "Channel":
+        return cls(id=d["id"], name=d.get("displayName") or "",
+                   description=d.get("description") or "",
+                   email=d.get("email") or None,
+                   web_url=d.get("webUrl"),
+                   membership_type=d.get("membershipType") or "")
+
+
+@dataclass
+class InstalledApp:
+    """A Teams app installed in a team; the definition arrives via $expand."""
+    id: str
+    name: str = ""
+    version: str | None = None
+    teams_app_id: str | None = None
+
+    @classmethod
+    def from_graph(cls, d: dict[str, Any]) -> "InstalledApp":
+        definition = d.get("teamsAppDefinition") or {}
+        return cls(id=d["id"], name=definition.get("displayName") or "",
+                   version=definition.get("version"),
+                   teams_app_id=definition.get("teamsAppId"))
+
+
+@dataclass
 class Event(EventSummary):
     SELECT: ClassVar[str] = EventSummary.SELECT + ",attendees,body,webLink"
     attendees: list[Recipient] = field(default_factory=list)

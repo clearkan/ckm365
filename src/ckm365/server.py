@@ -25,7 +25,10 @@ def main(argv: list[str] | None = None) -> None:
 
     serve = sub.add_parser("serve", help="run the stdio MCP server")
     serve.add_argument("--preset", default="all",
-                       help="comma-separated presets: mail, calendar, all")
+                       help="comma-separated presets: mail, calendar, teams, all. "
+                            "'all' means mail+calendar; teams is read-only "
+                            "discovery on its own consent tier, so ask for "
+                            "it by name (see scripts/add-teams-scopes.sh)")
     serve.add_argument("--write", action="store_true",
                        help="expose write tools (drafts, calendar writes)")
     serve.add_argument("--enable-send", action="store_true",
