@@ -114,7 +114,9 @@ contract and the SemVer'd programmatic API (ClearKan pins these tags);
 v1.5.0 the mcp>=2.0 floor fix, Ctx.set_graph, py.typed; v1.6.0 the
 app-only mode live-verified (CKM-5: RBAC-only scoping, scripted
 Jenkins-ready EXO automation — see docs/app-only-setup.md +
-docs/toolchain.md). Teams: decision recorded (option (c), CKM-24) — only
+docs/toolchain.md); v1.7.0 made mcp an optional extra (core deps:
+httpx/msal/pydantic — the dev group still carries mcp so source
+checkouts serve out of the box). Teams: decision recorded (option (c), CKM-24) — only
 the Graph-shaped subset ever moves here (CKM-25, backlog). Board: open
 items are CKM-18 (SharePoint/Teams-site file sync), CKM-25. Security +
 simplification reviews completed; decisions on deliberately-kept

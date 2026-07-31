@@ -87,8 +87,15 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _serve(args: argparse.Namespace) -> None:
-    from mcp.server.mcpserver import MCPServer
-    from mcp.types import ToolAnnotations
+    try:
+        from mcp.server.mcpserver import MCPServer
+        from mcp.types import ToolAnnotations
+    except ImportError as exc:
+        raise SystemExit(
+            "ckm365 serve needs the MCP SDK (>=2.0), which is an optional "
+            "extra — install with: pip install 'ckm365[mcp]'  (uv: add the "
+            "'mcp' extra, or `uv sync` in a source checkout, whose dev "
+            "group includes it)") from exc
 
     from .tools import SEND, WRITE
 

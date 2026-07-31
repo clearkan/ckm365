@@ -1,6 +1,6 @@
 [project]
 name = "ckm365"
-version = "1.6.0"
+version = "1.7.0"
 description = "Minimal multi-tenant Microsoft Graph MCP server (mail + calendar)"
 readme = "README.md"
 license = "MIT"
@@ -9,15 +9,24 @@ authors = [{ name = "Sean Whiteley" }]
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
-    "mcp>=2.0",
     "msal>=1.31",
+    # Always a direct dependency (models.py; the blessed API returns
+    # pydantic models) — previously undeclared, riding in via mcp.
+    "pydantic>=2",
 ]
+
+# mcp is needed ONLY by the `ckm365 serve` MCP front door; programmatic
+# and pydantic-ai consumers stay mcp-free (and unpinned from its majors).
+[project.optional-dependencies]
+mcp = ["mcp>=2.0"]
 
 [project.scripts]
 ckm365 = "ckm365.server:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+# dev mirrors the mcp extra so a plain `uv sync` keeps `uv run ckm365
+# serve` working from a source checkout (live MCP registrations use it).
+dev = ["pytest>=8", "mcp>=2.0"]
 
 [build-system]
 requires = ["hatchling"]

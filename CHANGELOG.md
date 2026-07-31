@@ -3,6 +3,26 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [1.7.0] — 2026-07-31
+
+### Changed
+- **`mcp` is now an optional extra, not a core dependency** (CKM-26,
+  ClearKan blocker): core installs pull only `httpx`/`msal`/`pydantic`;
+  `ckm365[mcp]` adds the MCP SDK (still `>=2.0`) for `ckm365 serve`,
+  which now exits with an actionable install hint when the SDK is
+  missing. Rationale: the v1.5.0 floor fix was correct but propagated an
+  mcp-2.0 pin to pure programmatic consumers — ClearKan's own MCP server
+  needs mcp 1.x (`mcp.server.fastmcp` was removed in 2.0), making the
+  two uninstallable together while the dep was hard. The dev group
+  mirrors the extra so source checkouts (`uv sync` + the live Claude
+  Code registrations) serve unchanged.
+
+### Fixed
+- **`pydantic` declared as the direct dependency it always was** —
+  `models.py` imports it and the blessed API returns pydantic models,
+  but it was riding in transitively via `mcp` and a no-extra install
+  broke. Caught by the clean-venv acceptance test for this release.
+
 ## [1.6.0] — 2026-07-30
 
 App-only mode is real: CKM-5 closed, live-verified end to end on one
