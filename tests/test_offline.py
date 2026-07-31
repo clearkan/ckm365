@@ -426,6 +426,33 @@ def test_list_installed_apps_flattens_expanded_definition():
         ("inst1", "ClearKan", "1.2", "app-guid")
 
 
+def test_teams_calls_never_send_top(monkeypatch):
+    """Live-verified 2026-08-01: /me/joinedTeams, /channels and
+    /installedApps all 400 with "Query option 'Top' is not allowed".
+    `top` must stay a client-side cap — never a $top query option."""
+    urls = []
+
+    def handler(request):
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"value": [
+            {"id": "x", "teamsAppDefinition": {"displayName": "a"}}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    teams.list_teams(ctx, top=5)
+    teams.list_channels(ctx, "t1", top=5)
+    teams.list_installed_apps(ctx, "t1", top=5)
+    assert urls and not any("top=" in u.lower() for u in urls), urls
+
+    # …but the cap still applies, client-side.
+    def many(request):
+        return httpx.Response(200, json={"value": [
+            {"id": f"c{i}", "displayName": "x"} for i in range(20)]})
+
+    ctx.set_graph("p", make_graph(many))
+    assert len(teams.list_channels(ctx, "t1", top=5)) == 5
+
+
 def test_teams_tools_have_no_mailbox_parameter():
     """Org-scoped, not mailbox-scoped — a mailbox arg would be a lie."""
     for fn in (teams.list_teams, teams.list_channels,

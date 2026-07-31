@@ -107,10 +107,16 @@ breaking change — `tests/test_offline.py` carries the import contract.
   tools the running MCP server needs a reconnect (`/mcp`) to show them.
 - First Graph hit on a cold mailbox can 503 (`ErrorInternalServerTransient`)
   past the retry budget — just retry the operation.
+- Teams endpoints REJECT `$top` (400 "Query option 'Top' is not
+  allowed"): `/me/joinedTeams`, `/teams/{id}/channels`,
+  `/teams/{id}/installedApps` all refuse it — only the `/teams`
+  collection accepts it. tools/teams.py sends no `$top` and caps
+  client-side via `pull()`; `$select`/`$expand` are fine. Offline mocks
+  accept anything, so this only showed up live (it did, on first run).
 
 ## Current state (2026-08-01)
 
-Version 2.1.0. Phases 1-2 done and live-verified on both tenants: 22 tools
+Version 2.1.1. Phases 1-2 done and live-verified on both tenants: 22 tools
 (mail/calendar/watch/accounts/teams), three-tier gating, admin CLI, multi-user
 onboarding, event-driven wake pattern. v1.4.0 added the thread-safety
 contract and the SemVer'd programmatic API (ClearKan pins these tags);

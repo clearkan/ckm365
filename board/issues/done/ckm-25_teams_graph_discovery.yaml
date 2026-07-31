@@ -1,9 +1,9 @@
 id: CKM-25
 title: Teams option-(c) slice — Graph team/channel discovery + app-installation state
-column: doing
-status: doing
+column: done
+status: done
 created_at: '2026-07-30T14:52:38Z'
-updated_at: '2026-07-31T14:43:39Z'
+updated_at: '2026-07-31T22:10:28Z'
 assignees:
 - claude
 description: |-
