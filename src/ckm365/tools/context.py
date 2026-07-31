@@ -135,7 +135,7 @@ class Ctx:
 def pull(g: Graph, model, path: str, *, params: dict, top: int,
          headers: dict | None = None) -> list:
     """The list-tool idiom: paged fetch projected into a model (CKM-14)."""
-    return [model.model_validate(item)
+    return [model.from_graph(item)
             for item in g.paged(path, params=params, max_items=top,
                                 headers=headers)]
 

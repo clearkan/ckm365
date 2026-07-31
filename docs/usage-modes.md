@@ -153,7 +153,7 @@ Notes:
   "delta_token": str, "matched": int}` — not a tuple. `matched` can
   exceed `len(messages)` when capped by `top=`.
 - Every tool function takes `Ctx` first, then plain typed arguments; they
-  return pydantic models (or dicts of them) and raise
+  return dataclass models (or dicts of them) and raise
   `WriteDisabled`/`SendDisabled`/`GraphError`/`NeedsLogin` — the same
   gating as the MCP server, enforced in the functions themselves.
 - One `Ctx` is safe across threads; async callers wrap calls in

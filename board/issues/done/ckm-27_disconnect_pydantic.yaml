@@ -1,0 +1,65 @@
+id: CKM-27
+title: Disconnect pydantic from core — dataclass models, pydantic stays first-class
+column: done
+status: done
+created_at: '2026-07-31T09:30:08Z'
+updated_at: '2026-07-31T09:33:13Z'
+assignees:
+- claude
+description: |-
+  seanwy: remove pydantic as a core dependency; treat it as a test of
+  whether pydantic consumers remain FIRST-CLASS. Design: models.py
+  becomes stdlib dataclasses with explicit from_graph() projections
+  (replacing aliases/validators); the SELECT ClassVars stay. pydantic v2
+  handles stdlib dataclasses natively (TypeAdapter: schema, validation,
+  serialization), which is exactly what the MCP SDK and pydantic-ai do
+  under the hood — so both front doors keep working, now against
+  dataclasses.
+
+  Core deps after: httpx + msal only. mcp extra unchanged (brings
+  pydantic transitively for serve).
+
+  Verification bar:
+  - offline suite green after model_validate -> from_graph migration
+  - clean venv, no extras: pydantic ABSENT, tool call over MockTransport
+    works end to end (the disconnect test)
+  - first-class test: TypeAdapter(Message) json_schema + dump round-trip
+    (what MCP SDK/pydantic-ai rely on)
+  - MCPServer.add_tool over all presets (schema generation on dataclass
+    returns)
+  - LIVE: full suite on intixa + app-only smoke (projection rewrite
+    touches every read path)
+
+  SemVer: 2.0.0 — the blessed surface said "pydantic models";
+  model_validate/model_dump disappear from returned objects (attribute
+  surface unchanged). Notes to ClearKan in tmp/ when done.
+dependencies: []
+parent_id: null
+priority: high
+issue_type: improvement
+tags: [clearkan, packaging, api]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-07-31T09:30:08Z'
+  by: claude
+  details: Issue created in column doing (seanwy directive)
+  event: created
+- at: '2026-07-31T09:33:13Z'
+  by: claude
+  details: 'DONE, released as 2.0.0 (breaking: pydantic methods gone from
+    returned models; attribute surface unchanged). models.py rewritten as
+    stdlib dataclasses with explicit from_graph() projections (SELECT
+    ClassVars kept; same flattening semantics incl. from/emailAddress,
+    location displayName, onlineMeeting joinUrl); all model_validate call
+    sites migrated. Core deps now exactly httpx+msal. FIRST-CLASS TEST
+    PASSED: TypeAdapter(Message) schema + dump/validate round-trip works
+    (what MCP SDK/pydantic-ai rely on), and MCPServer.add_tool accepted all
+    19 dataclass-returning tools — pydantic consumers lose nothing.
+    VERIFIED: offline 63 passed; clean venv with NO pydantic + NO mcp ran a
+    full MockTransport tool call (projection/set_graph/close); LIVE suite
+    5/5 delegated intixa + app-only smoke with 403 deny probe — every read
+    path re-verified against real Graph. Docs/CHANGELOG/notes to ClearKan
+    (tmp/clearkan-pydantic-disconnect-notes.md) updated.'
+  event: moved
+version: 1

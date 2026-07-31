@@ -97,7 +97,7 @@ def get_message(ctx: Ctx, message_id: str, *, body_format: str = "text",
     g, mb = ctx.target(account, mailbox)
     data = g.get(_message_path(mb, message_id),
                  params={"$select": Message.SELECT}, headers=_prefer(body_format))
-    return Message.model_validate(data)
+    return Message.from_graph(data)
 
 
 def list_mail_folders(ctx: Ctx, *, account: str | None = None,
@@ -144,19 +144,19 @@ def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
         "contentBytes": base64.b64encode(data).decode("ascii"),
     }
     created = g.post(path + "/attachments", json=payload)
-    return Attachment.model_validate(created)
+    return Attachment.from_graph(created)
 
 
 def _insert_top(g: Graph, mb: str, draft_id: str, body_html: str) -> Draft:
     path = _message_path(mb, draft_id)
     data = g.get(path, params={"$select": Draft.SELECT}, headers=_prefer("html"))
-    current = Draft.model_validate(data)
+    current = Draft.from_graph(data)
     if not body_html:
         return current
     patched = g.patch(path, json={"body": _prepended(current.body, body_html)},
                       params={"$select": Draft.SELECT},
                       headers=_etag_header(data))
-    return Draft.model_validate(patched)
+    return Draft.from_graph(patched)
 
 
 def create_reply_draft(ctx: Ctx, message_id: str, body_html: str = "", *,
@@ -206,7 +206,7 @@ def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
             patch[key] = _addrs(value)
     if not patch:
         raise ValueError("nothing to update")
-    return Draft.model_validate(
+    return Draft.from_graph(
         g.patch(path, json=patch, params={"$select": Draft.SELECT},
                 headers=_etag_header(current)))
 
@@ -228,7 +228,7 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
     if bcc:
         message["bccRecipients"] = _addrs(bcc)
     created = g.post(_path(mb, "messages"), json=message)
-    return Draft.model_validate(created)
+    return Draft.from_graph(created)
 
 
 def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,

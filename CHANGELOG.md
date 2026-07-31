@@ -3,6 +3,28 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.0.0] — 2026-07-31
+
+**Breaking:** pydantic is disconnected from the core (CKM-27). Models in
+`ckm365.models` are now **stdlib dataclasses** built via
+`Model.from_graph(dict)` — the attribute surface (field names, types,
+defaults, nesting) is unchanged, but pydantic-specific methods
+(`model_validate`, `model_dump`, …) no longer exist on returned objects.
+Core runtime deps are now exactly `httpx` + `msal`.
+
+The disconnect doubled as a first-class-support test, and pydantic
+consumers pass it: pydantic v2 treats stdlib dataclasses natively
+(`TypeAdapter` schema/validation/serialization — exactly what the MCP SDK
+and pydantic-ai do with tool return types). Two new offline tests pin
+that contract: a `TypeAdapter(Message)` schema + dump/validate round-trip,
+and `MCPServer.add_tool` over all 19 tools with dataclass returns.
+
+Verified: offline suite 63 passed; clean-venv install with NO pydantic
+and NO mcp runs a full tool call over `MockTransport` (projection,
+`set_graph`, `close`); live suite 5/5 on the delegated profile and
+app-only smoke incl. the 403 deny probe — every read path re-verified
+against real Graph through the new projections.
+
 ## [1.7.0] — 2026-07-31
 
 ### Changed

@@ -18,7 +18,7 @@ own.
 
 ## The five steps
 
-1. **Get the code and sync deps** (`httpx`, `msal`, `pydantic` core plus
+1. **Get the code and sync deps** (`httpx`, `msal` core plus
    the `mcp` extra for serving — a source-checkout `uv sync` brings all
    of them, hash-locked):
 

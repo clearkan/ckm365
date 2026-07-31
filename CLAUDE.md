@@ -10,7 +10,7 @@ start; ask seanwy if missing).
 
 - **Multi-tenant**: never assume one tenant. Named profiles, each with a
   pinned tenant-ID authority — never the `common` authority.
-- **Deps**: core is exactly `httpx`, `msal`, `pydantic` via uv
+- **Deps**: core is exactly `httpx`, `msal` via uv
   (hash-locked); `mcp` is an optional extra used only by `ckm365 serve`
   (the dev group carries it so source checkouts serve out of the box).
   Any new dependency needs seanwy's explicit sign-off first.

@@ -22,9 +22,11 @@ session; everything else worth knowing is one hop from here.
 
 1. Move the board issue to `doing` (update `updated_at`, append `history`).
 2. Implement in the existing style: sync Python, plain typed tool functions
-   (Ctx first arg), pydantic models owning their `$select`, docstrings that
-   teach agents (they BECOME the MCP tool descriptions). Deps are frozen at
-   mcp/msal/httpx — a new dep needs the owner's explicit sign-off first.
+   (Ctx first arg), dataclass models owning their `$select`, docstrings that
+   teach agents (they BECOME the MCP tool descriptions). Core deps are
+   frozen at httpx/msal (mcp is an optional extra; models are stdlib
+   dataclasses, pydantic-compatible via TypeAdapter but never imported) —
+   a new dep needs the owner's explicit sign-off first.
 3. Offline tests (`uv run pytest tests/ -q`) — httpx.MockTransport, no
    network, must stay green. Add tests for new behavior incl. gating.
 4. Live verification — offline mocks have missed real Graph behavior
@@ -67,7 +69,7 @@ session; everything else worth knowing is one hop from here.
 ## Map of the code (src/ckm365/, ~1 file per concern)
 
 `config.py` profiles/TOML → `auth.py` MSAL + locked token caches →
-`graph.py` httpx client, retry, paging, errors → `models.py` pydantic
+`graph.py` httpx client, retry, paging, errors → `models.py` dataclass
 projections → `tools/` (context: Ctx/gating/bind/pull; mail; calendar;
 watch: delta triggers; accounts) → front doors `server.py` (CLI: serve/
 watch/login/logout + admin.py: mailbox/app/doctor) and `agent_tools.py`
@@ -114,9 +116,11 @@ contract and the SemVer'd programmatic API (ClearKan pins these tags);
 v1.5.0 the mcp>=2.0 floor fix, Ctx.set_graph, py.typed; v1.6.0 the
 app-only mode live-verified (CKM-5: RBAC-only scoping, scripted
 Jenkins-ready EXO automation — see docs/app-only-setup.md +
-docs/toolchain.md); v1.7.0 made mcp an optional extra (core deps:
-httpx/msal/pydantic — the dev group still carries mcp so source
-checkouts serve out of the box). Teams: decision recorded (option (c), CKM-24) — only
+docs/toolchain.md); v1.7.0 made mcp an optional extra (the dev
+group still carries mcp so source checkouts serve out of the box); v2.0.0
+disconnected pydantic entirely — models are stdlib dataclasses
+(pydantic-compatible via TypeAdapter, test-pinned), core deps are exactly
+httpx/msal. Teams: decision recorded (option (c), CKM-24) — only
 the Graph-shaped subset ever moves here (CKM-25, backlog). Board: open
 items are CKM-18 (SharePoint/Teams-site file sync), CKM-25. Security +
 simplification reviews completed; decisions on deliberately-kept

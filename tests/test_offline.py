@@ -152,7 +152,7 @@ def test_paged_refuses_off_graph_next_link():
 # --- models ---------------------------------------------------------------
 
 def test_message_model_flattens_graph_shapes():
-    msg = Message.model_validate({
+    msg = Message.from_graph({
         "id": "m1", "subject": "Hi",
         "from": {"emailAddress": {"name": "A", "address": "a@x.com"}},
         "toRecipients": [{"emailAddress": {"address": "b@x.com"}}],
@@ -165,7 +165,7 @@ def test_message_model_flattens_graph_shapes():
 
 
 def test_event_model_flattens_location_and_join_url():
-    ev = Event.model_validate({
+    ev = Event.from_graph({
         "id": "e1", "subject": "standup",
         "start": {"dateTime": "2026-07-30T09:00:00", "timeZone": "UTC"},
         "end": {"dateTime": "2026-07-30T09:15:00", "timeZone": "UTC"},
@@ -175,6 +175,38 @@ def test_event_model_flattens_location_and_join_url():
     assert ev.location == "Room 1"
     assert ev.join_url == "https://teams/x"
     assert ev.attendees[0].address == "a@x.com"
+
+
+def test_models_are_first_class_for_pydantic_consumers():
+    """The disconnect contract (CKM-27): models are stdlib dataclasses with
+    no pydantic import, yet pydantic v2 must handle them natively — schema,
+    validation, and serialization — because that is exactly what the MCP
+    SDK and pydantic-ai do with tool return types."""
+    pydantic = pytest.importorskip("pydantic")
+    import ckm365.models as models_mod
+    with open(models_mod.__file__) as src:  # the core stays pydantic-free
+        assert not any(line.startswith(("import pydantic", "from pydantic"))
+                       for line in src)
+
+    adapter = pydantic.TypeAdapter(Message)
+    schema = adapter.json_schema()
+    assert "subject" in schema.get("properties", {})
+    msg = Message.from_graph({
+        "id": "m1", "subject": "Hi",
+        "from": {"emailAddress": {"name": "A", "address": "a@x.com"}}})
+    dumped = adapter.dump_python(msg)
+    assert dumped["sender"]["address"] == "a@x.com"
+    assert adapter.validate_python(dumped) == msg  # round-trip
+
+
+def test_mcp_server_accepts_dataclass_returning_tools():
+    """serve-path contract: MCPServer schema generation must work over every
+    tool's bind()-trimmed signature with dataclass return types."""
+    mcpserver = pytest.importorskip("mcp.server.mcpserver")
+    ctx = _ctx(write_enabled=True, send_enabled=True)
+    server = mcpserver.MCPServer("ckm365-test")
+    for fn in tools_for(["all"], write=True, send=True):
+        server.add_tool(bind(fn, ctx))
 
 
 # --- tools / gating / binding ----------------------------------------------
