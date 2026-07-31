@@ -3,6 +3,28 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.1.1] — 2026-08-01
+
+### Fixed
+- **Teams reads 400'd on first live use**: `/me/joinedTeams`,
+  `/teams/{id}/channels`, and `/teams/{id}/installedApps` all reject
+  `$top` ("Query option 'Top' is not allowed") — only the `/teams`
+  collection accepts it. The three calls now send no `$top` and the
+  caller's `top` is applied client-side by `pull()`/`paged()`, which
+  already caps results and stops paging. `$select`/`$expand` are
+  unaffected. Offline mocks accept any query string, so this was
+  invisible until the consent tier existed and the reads ran for real —
+  a regression test now asserts no `$top` is ever sent, and that the
+  client-side cap still truncates.
+
+### Verified (live, delegated profile)
+- `list_teams` → 2 teams, `list_channels` → 1 channel,
+  `list_installed_apps` → capped at the requested 10 of 63 available
+  (proving the client-side cap).
+- Negative: the app-only profile — which holds ZERO Graph application
+  permissions by design — is refused Teams with 403. Exchange RBAC does
+  not cover Teams, so that refusal is the whole app-only story here.
+
 ## [2.1.0] — 2026-08-01
 
 ### Added

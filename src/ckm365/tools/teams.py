@@ -16,6 +16,14 @@ Two things differ from every other tool module here:
   privilege, and usually what a human means); app-only tokens have no
   "me" and use /teams (every team in the tenant).
 
+Graph fact paid for live (2026-08-01): the Teams endpoints reject
+`$top` with 400 "Query option 'Top' is not allowed" — /me/joinedTeams,
+/teams/{id}/channels, and /teams/{id}/installedApps all refuse it (only
+the app-only /teams collection accepts it). So none of these calls send
+`$top`; the caller's `top` is applied client-side by pull()/paged(),
+which caps the result and stops following pages. `$select` and `$expand`
+ARE supported everywhere they are used here.
+
 Consent is a SEPARATE least-privilege tier (scripts/add-teams-scopes.sh),
 never folded into the mailbox scopes: a mail --write flag must never
 imply the ability to enumerate Teams. Note the app-only asymmetry —
@@ -43,8 +51,7 @@ def list_teams(ctx: Ctx, *, top: int = 50,
     g = ctx.graph(account)
     path = "/teams" if ctx.profile(account).auth == "client_credential" \
         else "/me/joinedTeams"
-    return pull(g, Team, path, top=top,
-                params={"$select": Team.SELECT, "$top": str(min(top, 100))})
+    return pull(g, Team, path, top=top, params={"$select": Team.SELECT})
 
 
 def list_channels(ctx: Ctx, team_id: str, *, top: int = 50,
@@ -60,8 +67,7 @@ def list_channels(ctx: Ctx, team_id: str, *, top: int = 50,
         raise ValueError("top must be between 1 and 500")
     g = ctx.graph(account)
     return pull(g, Channel, f"/teams/{_seg(team_id, 'team_id')}/channels",
-                top=top,
-                params={"$select": Channel.SELECT, "$top": str(min(top, 100))})
+                top=top, params={"$select": Channel.SELECT})
 
 
 def list_installed_apps(ctx: Ctx, team_id: str, *, top: int = 50,
@@ -77,5 +83,4 @@ def list_installed_apps(ctx: Ctx, team_id: str, *, top: int = 50,
     g = ctx.graph(account)
     return pull(g, InstalledApp,
                 f"/teams/{_seg(team_id, 'team_id')}/installedApps", top=top,
-                params={"$expand": "teamsAppDefinition",
-                        "$top": str(min(top, 100))})
+                params={"$expand": "teamsAppDefinition"})
