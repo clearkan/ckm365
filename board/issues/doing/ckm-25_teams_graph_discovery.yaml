@@ -1,10 +1,11 @@
 id: CKM-25
 title: Teams option-(c) slice — Graph team/channel discovery + app-installation state
-column: backlog
-status: backlog
+column: doing
+status: doing
 created_at: '2026-07-30T14:52:38Z'
-updated_at: '2026-07-30T14:52:38Z'
-assignees: []
+updated_at: '2026-07-31T14:43:39Z'
+assignees:
+- claude
 description: |-
   Implementation of the CKM-24 decision (option (c)): the only Teams
   functionality that moves into ckm365 is the genuinely Graph-shaped
@@ -42,4 +43,29 @@ history:
   details: Issue created in column backlog — the (c)-slice from the CKM-24
     decision; consent design mirrors the send-tier opt-in pattern
   event: created
+- at: '2026-07-31T14:43:39Z'
+  by: claude
+  details: 'Code COMPLETE and released as 2.1.0; live verification is the
+    only thing outstanding and it is gated on an interactive consent step.
+    Built: tools/teams.py (list_teams / list_channels / list_installed_apps
+    — read-only, org-scoped so no mailbox param, 22 code lines) +
+    Team/Channel/InstalledApp models; teams preset with empty WRITE/SEND
+    tiers; scripts/add-teams-scopes.sh (delegated Team.ReadBasic.All,
+    Channel.ReadBasic.All, TeamsAppInstallation.ReadForTeam; dry-run
+    default; MERGES into existing requiredResourceAccess so mail scopes
+    survive; grant-verified consent loop); live-smoke --teams.
+    DESIGN CALL: "all" preset now means mail+calendar and EXCLUDES teams —
+    a preset with its own consent tier must be named explicitly, so no
+    existing session gains tools that would 403 or pay their schema cost.
+    VERIFIED: offline 67 passed (auth-mode endpoint switch delegated
+    /me/joinedTeams vs app-only /teams, projection, id encoding as a single
+    segment, no mailbox param, preset counts); consent script dry-run
+    resolved all three scope ids against real Graph; live-smoke --teams on
+    intixa correctly reports the pre-consent 403 as a SKIP with mail path
+    still green. PENDING (seanwy, tenant-touching): run
+    ./scripts/add-teams-scopes.sh --yes on a tenant, re-login, then
+    live-smoke --teams to verify the post-consent reads — especially that
+    $select is honoured on /me/joinedTeams, which offline mocks cannot
+    prove. Issue stays in doing until that runs.'
+  event: updated
 version: 1

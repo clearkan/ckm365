@@ -6,11 +6,16 @@ agent session.
 
 Usage: uv run python scripts/live-smoke.py [profile] [--deny MAILBOX]
                                                      [--shared MAILBOX]
+                                                     [--teams]
 
 --deny MAILBOX runs a negative test: listing that mailbox's messages MUST
 fail with a Graph 4xx (proves tenant permissions do not leak across users).
 --shared MAILBOX runs a positive test: the shared mailbox MUST be readable
 via the profile's .Shared delegated scopes (counts printed, nothing else).
+--teams exercises the Teams discovery reads (CKM-25): teams, then the
+first team's channels and installed apps. Needs the separate Teams
+consent tier (scripts/add-teams-scopes.sh); without it Graph returns 403,
+which this reports as a skip rather than a failure.
 """
 
 import argparse
@@ -21,11 +26,13 @@ from ckm365.graph import GraphError
 from ckm365.tools import Ctx
 from ckm365.tools.calendar import list_events
 from ckm365.tools.mail import list_mail_folders, list_messages
+from ckm365.tools.teams import list_channels, list_installed_apps, list_teams
 
 parser = argparse.ArgumentParser()
 parser.add_argument("profile", nargs="?", default=None)
 parser.add_argument("--deny", metavar="MAILBOX", default=None)
 parser.add_argument("--shared", metavar="MAILBOX", default=None)
+parser.add_argument("--teams", action="store_true")
 args = parser.parse_args()
 account = args.profile
 
@@ -57,6 +64,26 @@ if args.shared:
                  "for the signed-in user; grant via Exchange Online: "
                  f"Add-MailboxPermission {args.shared} -User <upn> "
                  "-AccessRights FullAccess -AutoMapping $false")
+
+if args.teams:
+    try:
+        found = list_teams(ctx, top=10)
+        print(f"teams visible: {len(found)}")
+        if found:
+            team = found[0]
+            print(f"  first team id: {team.id[:12]}… archived={team.is_archived}")
+            channels = list_channels(ctx, team.id, top=10)
+            print(f"  channels in it: {len(channels)} "
+                  f"(types: {sorted({c.membership_type for c in channels})})")
+            apps = list_installed_apps(ctx, team.id, top=10)
+            print(f"  installed apps: {len(apps)}")
+    except GraphError as exc:
+        if exc.status in (401, 403):
+            print(f"teams-test SKIPPED: no Teams consent yet (HTTP "
+                  f"{exc.status} {exc.code}) — run scripts/add-teams-scopes.sh "
+                  "then re-login")
+        else:
+            sys.exit(f"teams-test FAILED: {exc}")
 
 if args.deny:
     try:
