@@ -1,9 +1,9 @@
 id: CKM-29
 title: Client-tenant mode — what works with NO admin rights (guest or member)
-column: backlog
-status: backlog
+column: done
+status: done
 created_at: '2026-08-01T03:54:51Z'
-updated_at: '2026-08-01T03:54:51Z'
+updated_at: '2026-08-01T04:02:57Z'
 assignees: []
 description: |-
   ARCHITECTURAL CONSTRAINT, newly surfaced by seanwy (2026-08-01), and it
@@ -58,4 +58,35 @@ history:
     us guest or non-admin-member access only, which the existing
     admin-consent/RBAC setup path cannot serve. Research before code.
   event: created
+- at: '2026-08-01T04:02:57Z'
+  by: claude
+  details: 'DONE — consent floor established (full sourced analysis in
+    git-ignored tmp/client-tenant-consent-floor.md). ANSWER: zero-admin
+    client-tenant support is a FICTION; stop designing for it. The
+    Microsoft-managed default consent policy — default for new tenants and
+    force-migrated onto un-configured legacy tenants from 2025-07-16 — now
+    excludes Mail.Read/.ReadWrite, Calendars.*, Chat.*, and OnlineMeetings.*
+    from user consent entirely (exclusion list grew from 4 permissions to
+    ~30). The zero-admin floor is sign-in + basic teams/channel discovery +
+    the ability to SEND to chats without being able to read them. Not a
+    product. Separately, a multi-tenant app from another tenant cannot be
+    user-consented at all without publisher verification.
+    WITH ONE ADMIN CLICK it is real and small: delegated-only, read-only
+    multi-tenant app, tenant-wide admin consent via the
+    /adminconsent?client_id= URL. Exchange RBAC makes the ask BIGGER (it is
+    app-only mailbox machinery); Teams RSC can make it smaller for
+    transcripts specifically but only for private-chat meetings and needs a
+    Teams app package, itself admin-gated. The in-portal admin-consent
+    REQUEST workflow cannot be relied on — off until the client Global
+    Admin enables it, so email is the mechanism.
+    GUEST tenants: no, even with consent — a B2B guest has no host-tenant
+    mailbox (unsupported scenario) and the guest transcript path is
+    unverified. Treat guest-shaped clients as human-in-the-loop; the real
+    fix is asking for a member account, which converts it to the member
+    case.
+    KEY: ckm365 needs NO code change to serve the one-click model — a
+    profile pinning the client tenant + the multi-tenant client_id with
+    device-code auth already fits. The remaining work is OPERATIONAL
+    (publisher verification, consent one-pager) — filed as CKM-31.'
+  event: moved
 version: 1
