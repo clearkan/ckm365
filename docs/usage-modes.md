@@ -157,6 +157,48 @@ Three things to know:
   mailbox-style scope to fall back on. If a headless caller needs Teams,
   scope it per team with Teams resource-specific consent (RSC).
 
+## The `meetings` preset — transcript retrieval (read-only)
+
+Meeting CONTENT after the fact, over plain Graph REST: no bot joins the
+call, no audio is captured. Live media would need the .NET media library
+on a Windows VM in Azure — deliberately out of scope (CKM-28). The old
+per-minute transcript meter was removed on 2025-08-25, so this costs
+nothing.
+
+Flow: a calendar event's `join_url` → `find_meeting_id` →
+`list_meeting_transcripts` → `get_meeting_transcript` (VTT by default,
+`text/plain` available).
+
+**TWO admin gates, and the second one surprises people:**
+
+1. `scripts/add-transcript-scopes.sh` grants delegated
+   `OnlineMeetings.Read` + `OnlineMeetingTranscript.Read.All`. The
+   `.Read.All` is admin-consent-required *by definition* — no tenant
+   setting ever opens it to user consent.
+2. Teams has a separate tenant kill-switch. Even with consent granted,
+   the API returns `403 "Graph API access to transcripts is disabled for
+   this tenant"` until an admin turns on **Teams admin center → Meetings
+   → Meeting settings → Transcript API access → Microsoft Graph access**
+   (or `Set-CsTeamsMeetingConfiguration -EnableGraphTranscriptAccess $true
+   -Identity Global`). It defaults to OFF and has been **enforced since
+   2026-07-29**. `EnableAttributedTranscripts` additionally controls
+   whether speaker names appear; also off by default.
+
+What you can read: transcripts of meetings the signed-in user organised
+**or is on the calendar invite for** — attending counts, not just
+organising. Someone must have started transcription during the meeting.
+
+```sh
+./scripts/add-transcript-scopes.sh --dry-run    # then --yes; per tenant
+uv run python scripts/live-smoke.py <profile> --transcripts
+claude mcp add --scope user ckm365 -- uv run --directory <repo> \
+  ckm365 serve --preset mail,calendar,meetings
+```
+
+Transcript text is meeting content — as sensitive as mail bodies. It is
+returned to the caller but never logged, and the smoke script prints
+character counts only.
+
 ## Programmatic use (no MCP, no agent)
 
 For daemons and plain scripts (ClearKan's intake poller is the canonical

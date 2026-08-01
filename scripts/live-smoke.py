@@ -16,6 +16,11 @@ via the profile's .Shared delegated scopes (counts printed, nothing else).
 first team's channels and installed apps. Needs the separate Teams
 consent tier (scripts/add-teams-scopes.sh); without it Graph returns 403,
 which this reports as a skip rather than a failure.
+--transcripts walks recent calendar events with a Teams join URL,
+resolves each to an online meeting, and reports how many have a
+transcript (CKM-30). Needs add-transcript-scopes.sh AND the Teams admin
+setting 'Transcript API access -> Microsoft Graph access'. Prints ids and
+character counts only — never transcript text.
 """
 
 import argparse
@@ -26,6 +31,9 @@ from ckm365.graph import GraphError
 from ckm365.tools import Ctx
 from ckm365.tools.calendar import list_events
 from ckm365.tools.mail import list_mail_folders, list_messages
+from ckm365.tools.meetings import (find_meeting_id,
+                                   get_meeting_transcript,
+                                   list_meeting_transcripts)
 from ckm365.tools.teams import list_channels, list_installed_apps, list_teams
 
 parser = argparse.ArgumentParser()
@@ -33,6 +41,9 @@ parser.add_argument("profile", nargs="?", default=None)
 parser.add_argument("--deny", metavar="MAILBOX", default=None)
 parser.add_argument("--shared", metavar="MAILBOX", default=None)
 parser.add_argument("--teams", action="store_true")
+parser.add_argument("--transcripts", action="store_true")
+parser.add_argument("--days", type=int, default=60,
+                    help="how far back --transcripts looks")
 args = parser.parse_args()
 account = args.profile
 
@@ -84,6 +95,37 @@ if args.teams:
                   "then re-login")
         else:
             sys.exit(f"teams-test FAILED: {exc}")
+
+if args.transcripts:
+    now = datetime.now(UTC)
+    evs = list_events(ctx, start=(now - timedelta(days=args.days)).isoformat(),
+                      end=(now + timedelta(days=1)).isoformat(), top=200)
+    online = [e for e in evs if e.join_url]
+    print(f"events last {args.days}d: {len(evs)} (online: {len(online)})")
+    checked = found = 0
+    try:
+        for ev in online[:25]:
+            mid = find_meeting_id(ctx, ev.join_url)
+            if not mid:
+                continue
+            checked += 1
+            trs = list_meeting_transcripts(ctx, mid)
+            if trs:
+                found += 1
+                # ids and sizes only — transcript text is meeting content
+                body = get_meeting_transcript(ctx, mid, trs[0].id)
+                print(f"  meeting {mid[:16]}…: {len(trs)} transcript(s), "
+                      f"first {len(body['content'])} chars {body['format']}")
+                break
+        print(f"transcripts: probed {checked} resolvable meeting(s), "
+              f"{found} with a transcript")
+    except GraphError as exc:
+        if exc.status in (401, 403):
+            print(f"transcripts-test SKIPPED: {exc.status} — {str(exc)[:90]}")
+            print("  (needs scripts/add-transcript-scopes.sh AND the Teams admin "
+                  "setting 'Transcript API access -> Microsoft Graph access')")
+        else:
+            sys.exit(f"transcripts-test FAILED: {exc}")
 
 if args.deny:
     try:

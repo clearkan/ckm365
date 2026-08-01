@@ -1,13 +1,16 @@
 """Tool registry: presets are explicit function lists, split read vs write."""
 
-from . import accounts, calendar, mail, teams, watch
+from . import accounts, calendar, mail, meetings, teams, watch
 from .context import Ctx, SendDisabled, WriteDisabled, bind
 
 ALWAYS = [accounts.list_accounts]  # registered with every preset
 
-# The teams preset is read-only by design (CKM-24 option (c): discovery
-# only — Bot Framework messaging is not this package's job) and needs its
-# own consent tier, so it is never implied by the mail/calendar scopes.
+# teams and meetings are read-only by design and each needs its OWN
+# consent tier, so neither is ever implied by the mail/calendar scopes:
+#   teams    — discovery only (CKM-24 option (c): Bot Framework messaging
+#              is not this package's job)
+#   meetings — transcript retrieval (CKM-30); additionally gated by a
+#              Teams tenant setting, not just Graph consent
 READ = {
     "mail": [mail.list_messages, mail.get_message, mail.list_mail_folders,
              mail.list_attachments, watch.list_new_messages,
@@ -15,6 +18,8 @@ READ = {
     "calendar": [calendar.list_events, calendar.get_event],
     "teams": [teams.list_teams, teams.list_channels,
               teams.list_installed_apps],
+    "meetings": [meetings.find_meeting_id, meetings.list_meeting_transcripts,
+                 meetings.get_meeting_transcript],
 }
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,
@@ -22,18 +27,20 @@ WRITE = {
     "calendar": [calendar.create_event, calendar.update_event,
                  calendar.respond_event],
     "teams": [],
+    "meetings": [],
 }
 SEND = {
     "mail": [mail.send_draft],
     "calendar": [],
     "teams": [],
+    "meetings": [],
 }
 PRESETS = tuple(READ)
-# What "all" expands to. teams is EXCLUDED deliberately: it needs its own
-# consent tier (scripts/add-teams-scopes.sh), so folding it into the
-# default would put tools in every session that 403 until someone
-# consents — and preset selection exists to keep per-session tool count
-# down. Ask for it by name: --preset mail,calendar,teams.
+# What "all" expands to. teams and meetings are EXCLUDED deliberately:
+# each needs its own consent tier (add-teams-scopes.sh /
+# add-transcript-scopes.sh), so folding them in would put tools in every
+# session that 403 until someone consents — and preset selection exists to keep per-session tool count
+# down. Ask for them by name: --preset mail,calendar,teams,meetings.
 ALL_PRESETS = ("mail", "calendar")
 
 __all__ = ["ALL_PRESETS", "Ctx", "PRESETS", "READ", "SEND", "WRITE",
