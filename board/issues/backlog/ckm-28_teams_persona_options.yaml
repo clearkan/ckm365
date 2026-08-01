@@ -1,0 +1,64 @@
+id: CKM-28
+title: Teams agent persona — options analysis (research record, no build)
+column: backlog
+status: backlog
+created_at: '2026-08-01T03:54:51Z'
+updated_at: '2026-08-01T03:54:51Z'
+assignees: []
+description: |-
+  Research record, not a build task. Full analysis with sources and dates
+  lives in the git-ignored tmp/teams-persona-options.md (kept out of the
+  repo because it names real tenants).
+
+  QUESTION: what does it take to give an agent a real Teams persona —
+  a licensed user, Bot Framework, or something newer?
+
+  FINDINGS (verified 2026-08-01):
+  - Bot Framework: free, no license, headless, covers @mentions, channel
+    posts, 1:1 and group chats. But it is an APP identity — no presence,
+    no directory entry, no mailbox, not invitable as a person. The
+    downstream consumer already runs one; zero build to reuse.
+  - Licensed user: the only way to get a person-shaped identity today
+    at sane cost (~$4-6/user/mo). Graph chat/channel SEND is
+    DELEGATED-ONLY — the sole application permission is
+    Teamwork.Migrate.All (migration mode), so a daemon must BE the user
+    via device-code + cached refresh token, which is exactly this
+    project's existing auth pattern.
+  - RSC app-only send: ChannelMessage.Send.Group exists in docs but
+    Graph still rejects it (open MicrosoftDocs issue, unresolved). Dead
+    end today; cheap to re-probe later.
+  - Meeting listening IS possible app-only (POST /communications/calls;
+    RSC Calls.JoinGroupCalls.Chat scopes it to ONE meeting) — the exact
+    inverse of chat sending. But raw audio needs the .NET media library:
+    no Python, Windows Server VM in Azure, public IP per instance, still
+    developer preview. Out of scope for this stack — see CKM-29 for the
+    pragmatic alternative.
+  - Agent 365 (GA 2026-05-01): base governance is licensed PER HUMAN,
+    agents need no license and no documented cap. Real gate is a Product
+    Terms prerequisite (E5/A5, or Defender+Purview suites, or Business
+    Premium) that the pricing page omits. The AI-teammate tier — the
+    person-shaped one — is NOT under that rule: Frontier preview, licensed
+    PER AGENT INSTANCE, 25-seat subscription, GA pricing undetermined.
+
+  DECISION IMPACT: CKM-24 option (c) HOLDS. Bot Framework and media bots
+  stay out of this repo. Two candidate slices are genuinely Graph-shaped
+  and could land here later: delegated Teams send, and meeting transcript
+  retrieval (CKM-29).
+
+  STRATEGIC CONTEXT (seanwy): Nextcloud is the preferred direction; M365
+  support exists because clients use it, not by preference. Keep the M365
+  surface minimal and client-driven.
+dependencies: []
+parent_id: null
+priority: low
+issue_type: task
+tags: [teams, research, decision]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-01T03:54:51Z'
+  by: claude
+  details: Issue created in backlog from the Fable 5 research pass; analysis
+    doc stays in git-ignored tmp/ (names real tenants). No build implied.
+  event: created
+version: 1

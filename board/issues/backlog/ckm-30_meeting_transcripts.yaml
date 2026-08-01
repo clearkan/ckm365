@@ -1,0 +1,54 @@
+id: CKM-30
+title: Meeting transcript retrieval via Graph (no media, no bot)
+column: backlog
+status: backlog
+created_at: '2026-08-01T03:54:51Z'
+updated_at: '2026-08-01T03:54:51Z'
+assignees: []
+description: |-
+  seanwy's chosen focus out of the CKM-28 analysis: drop the real-time
+  media requirement entirely, get meeting CONTENT through plain Graph
+  REST and see how far that goes.
+
+  Why this and not a meeting bot: live audio needs the .NET media
+  library (no Python), a Windows Server VM in Azure with a public IP per
+  instance, and the platform is still developer preview. Transcript
+  retrieval is plain REST, httpx-friendly, and was de-metered on
+  2025-08-25 (the old $0.0022/min transcript meter is gone).
+
+  SHAPE (to be confirmed before building):
+  - GET /me/onlineMeetings/{id}/transcripts and .../transcripts/{id}/content
+  - change-notification subscriptions for transcript availability
+    (must subscribe BEFORE transcription starts)
+  - models + a read-only tool on its own consent tier, mirroring how the
+    teams preset was done in CKM-25
+
+  KNOWN CAVEATS: someone must actually start transcription in the
+  meeting; transcripts arrive at/after meeting end (content, not live);
+  scope naming suggests OnlineMeetingTranscript.Read.All, which is
+  likely ADMIN-CONSENT-REQUIRED — that is the crux, see below.
+
+  BLOCKED ON CKM-29: if the transcript scopes need admin consent, this
+  capability does not exist in client tenants (guest/non-admin member),
+  which are the tenants that matter. Establish the consent floor FIRST;
+  do not build a tool that only works where we are already admin.
+
+  Verify live before believing anything — the CKM-25 Teams work 400'd on
+  the first real call over an undocumented $top restriction that offline
+  mocks happily accepted.
+dependencies:
+- CKM-29
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [teams, meetings, graph]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-01T03:54:51Z'
+  by: claude
+  details: Issue created in backlog — seanwy picked transcripts as the focus
+    and explicitly dropped the real-time media requirement. Gated on the
+    CKM-29 consent-floor research.
+  event: created
+version: 1
