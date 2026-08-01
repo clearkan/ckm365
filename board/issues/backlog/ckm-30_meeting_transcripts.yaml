@@ -3,7 +3,7 @@ title: Meeting transcript retrieval via Graph (no media, no bot)
 column: backlog
 status: backlog
 created_at: '2026-08-01T03:54:51Z'
-updated_at: '2026-08-01T03:54:51Z'
+updated_at: '2026-08-01T04:02:57Z'
 assignees: []
 description: |-
   seanwy's chosen focus out of the CKM-28 analysis: drop the real-time
@@ -28,10 +28,29 @@ description: |-
   scope naming suggests OnlineMeetingTranscript.Read.All, which is
   likely ADMIN-CONSENT-REQUIRED — that is the crux, see below.
 
-  BLOCKED ON CKM-29: if the transcript scopes need admin consent, this
-  capability does not exist in client tenants (guest/non-admin member),
-  which are the tenants that matter. Establish the consent floor FIRST;
-  do not build a tool that only works where we are already admin.
+  UNBLOCKED — CKM-29 answered the consent question (2026-08-01):
+  - Scopes are delegated OnlineMeetings.Read + OnlineMeetingTranscript.
+    Read.All. The .Read.All IS admin-consent-required by definition; no
+    tenant setting ever opens it to user consent. So this needs one admin
+    consent per tenant — trivial in our own tenants, one click via the
+    ask in CKM-31 for client tenants.
+  - BETTER THAN EXPECTED: the transcript API is no longer organizer-only.
+    The v1.0 doc states it is "also available to users who are part of
+    the meeting calendar invite", covering both private-chat and channel
+    meetings. So post-consent we can read transcripts of meetings seanwy
+    ORGANISED **and** ones he merely ATTENDED, regardless of who started
+    transcription. That is most of the value.
+  - Two caveats to verify live: a Teams admin kill-switch ("Graph API
+    access to transcripts") can 403 everything even after consent; and
+    attendance via a forwarded link (not on the invite) probably does not
+    qualify (inference, unverified).
+  - Guest identities: assume no until a live probe says otherwise.
+
+  BUILD PATH: add the two scopes to our OWN tenant first (we are admin
+  there — a new consent script mirroring add-teams-scopes.sh, merging
+  rather than replacing), build the read-only tools on their own consent
+  tier as with CKM-25, and live-verify on intixa against a real meeting
+  with transcription switched on before claiming anything.
 
   Verify live before believing anything — the CKM-25 Teams work 400'd on
   the first real call over an undocumented $top restriction that offline
