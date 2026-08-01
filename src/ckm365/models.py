@@ -220,6 +220,25 @@ class Channel:
 
 
 @dataclass
+class Transcript:
+    """Metadata for one meeting transcript. Deliberately no SELECT: the
+    objects are tiny, and Teams endpoints have already been caught
+    rejecting query options that offline mocks accept happily (see the
+    $top gotcha in AGENTS.md) — so we ask for nothing and project what
+    arrives. The transcript TEXT is fetched separately by content()."""
+    id: str
+    created: str | None = None
+    meeting_id: str | None = None
+    meeting_organizer_id: str | None = None
+
+    @classmethod
+    def from_graph(cls, d: dict[str, Any]) -> "Transcript":
+        return cls(id=d["id"], created=d.get("createdDateTime"),
+                   meeting_id=d.get("meetingId"),
+                   meeting_organizer_id=d.get("meetingOrganizerId"))
+
+
+@dataclass
 class InstalledApp:
     """A Teams app installed in a team; the definition arrives via $expand."""
     id: str

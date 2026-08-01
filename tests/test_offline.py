@@ -12,7 +12,7 @@ from ckm365.config import ConfigError, Profile, load_profiles, resolve_profile
 from ckm365.graph import GRAPH_BASE, Graph, GraphError, mailbox_path
 from ckm365.models import Event, Message
 from ckm365.tools import (Ctx, SendDisabled, WriteDisabled, bind, calendar,
-                          mail, teams, tools_for)
+                          mail, meetings, teams, tools_for)
 
 
 class FakeAuth:
@@ -458,6 +458,76 @@ def test_teams_tools_have_no_mailbox_parameter():
     for fn in (teams.list_teams, teams.list_channels,
                teams.list_installed_apps):
         assert "mailbox" not in inspect.signature(fn).parameters, fn.__name__
+
+
+# --- meeting transcripts (CKM-30) -----------------------------------------
+
+def test_graph_content_returns_text_not_json():
+    """Transcripts come back as VTT — request() would blow up parsing it."""
+    def handler(request):
+        return httpx.Response(200, text="WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi",
+                              headers={"content-type": "text/vtt"})
+
+    assert make_graph(handler).content("/x").startswith("WEBVTT")
+
+
+def test_find_meeting_id_filters_on_join_url_and_escapes_quotes():
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"value": [{"id": "MSo-abc"}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    assert meetings.find_meeting_id(ctx, "https://teams/x?a=1") == "MSo-abc"
+    assert "JoinWebUrl+eq" in seen["url"] or "JoinWebUrl%20eq" in seen["url"]
+    # a quote in the URL must not break out of the OData string literal
+    meetings.find_meeting_id(ctx, "https://teams/it's")
+    assert "it%27%27s" in seen["url"]
+    with pytest.raises(ValueError, match="join_url"):
+        meetings.find_meeting_id(ctx, "   ")
+
+
+def test_find_meeting_id_returns_none_when_unresolvable():
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(lambda r: httpx.Response(200, json={"value": []})))
+    assert meetings.find_meeting_id(ctx, "https://teams/x") is None
+
+
+def test_list_and_get_transcripts():
+    seen = {}
+
+    def handler(request):
+        seen["path"] = request.url.path
+        seen["query"] = str(request.url.query)
+        if request.url.path.endswith("/content"):
+            return httpx.Response(200, text="WEBVTT\n\nhello",
+                                  headers={"content-type": "text/vtt"})
+        return httpx.Response(200, json={"value": [
+            {"id": "tr1", "createdDateTime": "2026-08-01T09:00:00Z",
+             "meetingId": "m1"}]})
+
+    ctx = _teams_ctx()
+    ctx.set_graph("p", make_graph(handler))
+    trs = meetings.list_meeting_transcripts(ctx, "m1")
+    assert (trs[0].id, trs[0].meeting_id) == ("tr1", "m1")
+    assert trs[0].created == "2026-08-01T09:00:00Z"
+
+    out = meetings.get_meeting_transcript(ctx, "m1", "tr1")
+    assert out["content"].startswith("WEBVTT") and out["format"] == "text/vtt"
+    assert out["meeting_id"] == "m1" and out["transcript_id"] == "tr1"
+    assert "format" in seen["query"]
+    with pytest.raises(ValueError, match="text_format"):
+        meetings.get_meeting_transcript(ctx, "m1", "tr1", text_format="text/html")
+
+
+def test_meetings_preset_is_read_only_and_opt_in():
+    assert len(tools_for(["meetings"])) == 4  # 3 tools + list_accounts
+    assert len(tools_for(["meetings"], write=True, send=True)) == 4
+    assert meetings.get_meeting_transcript not in tools_for(
+        ["all"], write=True, send=True)
+    assert meetings.get_meeting_transcript in tools_for(["all", "meetings"])
 
 
 # --- thread safety + lifecycle (CKM-19) -----------------------------------

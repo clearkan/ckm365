@@ -84,6 +84,19 @@ class Graph:
                 params: Mapping[str, str] | None = None,
                 json: Any = None,
                 headers: Mapping[str, str] | None = None) -> dict[str, Any] | None:
+        resp = self._send(method, path, params=params, json=json, headers=headers)
+        return resp.json() if resp.content else None
+
+    def content(self, path: str, *, params: Mapping[str, str] | None = None,
+                headers: Mapping[str, str] | None = None) -> str:
+        """GET a resource whose body is NOT JSON (meeting transcripts come
+        back as VTT text). Same auth and retry policy as request()."""
+        return self._send("GET", path, params=params, headers=headers).text
+
+    def _send(self, method: str, path: str, *,
+              params: Mapping[str, str] | None = None,
+              json: Any = None,
+              headers: Mapping[str, str] | None = None) -> httpx.Response:
         method = method.upper()
         attempt = 0
         while True:
@@ -100,7 +113,7 @@ class Graph:
                     resp.status_code in (503, 504) and method in _IDEMPOTENT)
                 if not retriable:
                     if resp.is_success:
-                        return resp.json() if resp.content else None
+                        return resp
                     raise self._error(resp)
                 if attempt >= _MAX_RETRIES:
                     raise self._error(resp)

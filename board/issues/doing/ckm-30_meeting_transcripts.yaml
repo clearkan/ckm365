@@ -1,9 +1,9 @@
 id: CKM-30
 title: Meeting transcript retrieval via Graph (no media, no bot)
-column: backlog
-status: backlog
+column: doing
+status: doing
 created_at: '2026-08-01T03:54:51Z'
-updated_at: '2026-08-01T04:02:57Z'
+updated_at: '2026-08-01T04:20:00Z'
 assignees: []
 description: |-
   seanwy's chosen focus out of the CKM-28 analysis: drop the real-time
@@ -70,4 +70,40 @@ history:
     and explicitly dropped the real-time media requirement. Gated on the
     CKM-29 consent-floor research.
   event: created
+- at: '2026-08-01T04:20:00Z'
+  by: claude
+  details: 'Code COMPLETE, PARTIALLY live-verified, blocked on one tenant
+    setting. seanwy authorised the consent step; add-transcript-scopes.sh
+    dry-run then applied on intixa — OnlineMeetings.Read +
+    OnlineMeetingTranscript.Read.All consented and grant-verified, existing
+    mail/calendar/teams scopes confirmed intact after the merge.
+    FINDING (useful): NO re-login was needed — the cached token already
+    minted the new scopes, because Entra includes admin-consented scopes on
+    silent refresh. The teams work re-logged in unnecessarily.
+    BUILT: Graph._send/Graph.content() split so non-JSON bodies (VTT) can be
+    fetched under the same auth+retry policy; Transcript model (no SELECT,
+    deliberately — see the $top gotcha); tools/meetings.py with
+    find_meeting_id / list_meeting_transcripts / get_meeting_transcript; a
+    read-only "meetings" preset excluded from "all" like teams; live-smoke
+    --transcripts. Offline suite 73 passed.
+    LIVE VERIFIED: find_meeting_id resolves a real calendar join URL to an
+    online-meeting id on intixa.
+    BLOCKED: list/get transcripts return 403 "Graph API access to
+    transcripts is disabled for this tenant" — the Teams tenant kill-switch,
+    OFF by default and ENFORCED since 2026-07-29 (three days ago), which is
+    why this surfaced now. Fix is a Teams admin setting, NOT a Graph
+    permission: Teams admin center > Meetings > Meeting settings >
+    Transcript API access > Microsoft Graph access, or
+    Set-CsTeamsMeetingConfiguration -EnableGraphTranscriptAccess $true
+    -EnableAttributedTranscripts $true -Identity Global. Deliberately NOT
+    run: it is a tenant-wide policy change enabling transcript access for
+    any consented app, and it was not in scope of the consent authorisation
+    — proposed to seanwy instead.
+    NOT RELEASED: no version bump or tag until the transcript read path is
+    live-verified. Tags are what ClearKan pins and must mean verified — the
+    2.1.0 teams release proved the cost of tagging ahead of live proof.
+    ALSO NOTE: the meetings live in the OTHER tenant (125 online meetings vs
+    1), so end-to-end verification wants consent there too, which needs an
+    interactive az login to that tenant first.'
+  event: moved
 version: 1
