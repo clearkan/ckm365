@@ -114,6 +114,12 @@ breaking change — `tests/test_offline.py` carries the import contract.
   (match on the request `id`), needs `Content-Type: application/json` on
   every sub-request carrying a body, and reports per-item failures as
   sub-`status` inside an overall 200 — `Graph.batch()` handles all four.
+- `internetMessageHeaders` IS returned on a message COLLECTION GET when
+  explicitly `$select`ed (CKM-38 assumed it was not — verified otherwise on
+  both tenants, 47-86 headers per row). It is kept off `list_messages`
+  anyway on VOLUME grounds: ~10.6-11 KB per row, ~11x a summary row.
+  `get_message_headers` fetches it deliberately, 20 messages per `/$batch`,
+  and curates before returning. `/$batch` sub-request URLs accept `$select`.
 - Teams endpoints REJECT `$top` (400 "Query option 'Top' is not
   allowed"): `/me/joinedTeams`, `/teams/{id}/channels`,
   `/teams/{id}/installedApps` all refuse it — only the `/teams`
@@ -123,9 +129,15 @@ breaking change — `tests/test_offline.py` carries the import contract.
 
 ## Current state (2026-08-05)
 
-Version 2.2.0. Phases 1-2 done and live-verified on both tenants: 29 tools
+Version 2.3.0. Phases 1-2 done and live-verified on both tenants: 30 tools
 (mail/calendar/watch/accounts/teams/meetings), three-tier gating, admin CLI,
-multi-user onboarding, event-driven wake pattern. v2.2.0 added the mail
+multi-user onboarding, event-driven wake pattern. v2.3.0 put `to`/`cc` on
+every `MessageSummary` (CKM-37 — sent-items correspondents, and which party
+a message belongs to in a shared mailbox; measured cost +17% per row, so no
+opt-in flag) and added read-tier `get_message_headers` (CKM-38 — a curated,
+sanitised, length-capped subset of internet headers with derived
+`is_bulk`/`is_auto_reply`; header values stay UNTRUSTED and are for
+classification, never authorisation). v2.2.0 added the mail
 triage slice (CKM-33/34/35/36): batched `mark_read`/`mark_unread`/`flag`/
 `unflag`/`complete_flag`/`move_message` over Graph `/$batch`, first-class
 `unread_only`/`flagged_only`/`since`/`from_address` predicates plus

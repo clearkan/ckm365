@@ -1,0 +1,97 @@
+id: CKM-37
+title: Expose recipients on message listings (to/cc), or make $select caller-controllable
+column: done
+status: done
+created_at: '2026-08-05T02:40:00Z'
+updated_at: '2026-08-05T16:30:00Z'
+assignees: []
+description: |-
+  claude (2026-08-05): MessageSummary carries sender but no recipient fields,
+  and the $select projection is fixed inside the server rather than passed by
+  the caller. Two separate consumers are blocked by the same gap, and the
+  second one is the more important.
+
+  BLOCKED 1 — learning correspondents from Sent Items. "Who does the user
+  actually email, and how often" is the natural way to seed a contact
+  registry, and it is unanswerable from a folder where the useful party is
+  the RECIPIENT. Listing sentitems today returns the user as sender on every
+  row and nothing else identifying.
+
+  BLOCKED 2 — alias-based routing in a SHARED mailbox. Where one mailbox
+  receives for two distinct parties (an operating entity and a second
+  jurisdiction; or a personal address that is also used for a trust), the
+  address the message was delivered TO is the single strongest signal for
+  which party it belongs to. Sender does not carry it. Without recipients,
+  that resolution falls back to weaker heuristics on subject and counterparty
+  domain, precisely in the cases where getting it wrong matters most —
+  different retention, privacy and disclosure expectations attach to the two
+  parties sharing the mailbox.
+
+  Sketch (read tier — toRecipients/ccRecipients are ordinary message
+  properties, no new consent):
+  - Add to_recipients and cc_recipients to MessageSummary. Both are lists;
+    Graph caps what it returns on a collection GET, so document the cap
+    rather than implying completeness.
+  - Consider bcc_recipients only for sentitems (it is present on the user's
+    own sent copy and absent elsewhere) — or omit it in v1 and say why.
+  - This is an additive model change on a blessed API. ClearKan pins
+    ckm365, so it is additive-safe, but confirm nothing does exhaustive
+    field matching on MessageSummary before shipping.
+  - Alternatively/additionally: let the caller pass a select list to
+    list_messages. That is more flexible but pushes Graph field names into
+    caller code and makes the return shape dynamic — probably worse for an
+    agent-facing API than just adding the two fields. Pick one deliberately
+    and record which and why.
+
+  Volume note: recipients meaningfully enlarge each row, and callers that
+  page thousands of messages pay for it on every row whether they use it or
+  not. If that proves heavy, an opt-in flag on list_messages is the escape
+  hatch — but do not add the flag pre-emptively without measuring.
+
+  Out of scope: recipient-based FILTERING server-side (a separate predicate,
+  belongs with CKM-35's work if wanted), and any address-book resolution of
+  recipients to identities.
+dependencies: []
+parent_id: null
+priority: high
+issue_type: feature
+tags: [mail, read-tier, routing]
+requested_by: claude
+due_date: null
+history:
+- at: '2026-08-05T02:40:00Z'
+  by: claude
+  details: Filed after a consumer design found the gap blocks both Sent Items
+    seeding and alias-based party resolution in shared mailboxes
+  event: created
+- at: '2026-08-05T13:00:00Z'
+  by: claude
+  details: Moved to doing — implementing CKM-37/38 as one slice on top of the
+    CKM-33..36 triage branch; CKM-37 first, since it is the blocker
+  event: moved
+- at: '2026-08-05T16:30:00Z'
+  by: claude
+  details: 'Done in v2.3.0. ROUTE: named fields, NOT a caller-supplied $select
+    — recorded deliberately. Models own their $select here, so a caller-driven
+    projection would make the return shape dynamic, push Graph''s own field names
+    into consumer code, and hand an agent a way to ask for exactly the fields these
+    tools keep off list rows on purpose (bodies, header bags). Named fields are
+    additive on the pinned API and the MCP schema stays self-describing. ONE
+    CORRECTION to the sketch: the fields are `to`/`cc`, not `to_recipients`/
+    `cc_recipients` — Message already exposes `to`/`cc` for the same concept and
+    inherits from MessageSummary, so the sketch''s names would have given one
+    object both. They moved to the base class instead; Message.to/.cc keep their
+    names, so nothing downstream renames. bcc omitted from listings (Graph
+    populates it only on the sender''s own copy — an empty column on nearly every
+    row); get_message still returns it. VOLUME MEASURED BEFORE DECIDING: +141
+    bytes/row, +17% (848->988 and 830->970 B/row over 100 real inbox rows on each
+    tenant) — not enough for an opt-in flag, so list_messages has none; a caller
+    paging thousands who disagrees gets a new issue. Live: 25/25 sentitems rows
+    carried `to` (11 and 58 distinct correspondents from ONE call), and 25 inbox
+    rows carried 12 and 15 DISTINCT delivered-to addresses with 21/25 and 20/25
+    addressed to something other than the primary address — so alias-based party
+    resolution now has the signal it needed. No new consent (ordinary message
+    properties under Mail.Read). Recipient-based server-side filtering and
+    address-book resolution stayed out.'
+  event: completed
+version: 3

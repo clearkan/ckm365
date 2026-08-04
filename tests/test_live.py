@@ -13,12 +13,14 @@ send tier. Output is pytest pass/fail only — no message content.
 
 import os
 import tempfile
+from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from ckm365.graph import GraphError, encode_segment, mailbox_path
+from ckm365.models import MessageHeaders
 from ckm365.tools import Ctx, calendar as cal, mail
 from ckm365.tools.watch import list_new_messages
 
@@ -138,6 +140,33 @@ def test_group_by_sender_aggregates_without_pulling_messages(ctx):
     assert all(s["unread"] <= s["total"] for s in res["senders"])
     totals = [s["total"] for s in res["senders"]]
     assert totals == sorted(totals, reverse=True)  # busiest sender first
+
+
+def test_recipients_ride_along_and_headers_are_curated(ctx):
+    """CKM-37/38 against real Graph. Offline mocks return whatever the
+    handler is given, so only a live call proves Graph honours to/cc on a
+    COLLECTION GET and that the header bag curates down to the named
+    subset. Read-only, and no message content is asserted on."""
+    sent = mail.list_messages(ctx, folder="sentitems", top=10, mailbox=MAILBOX)
+    if sent:
+        # In Sent Items the sender is always the owner: `to` is the only
+        # thing identifying the correspondent (CKM-37's first blocker).
+        assert any(m.to for m in sent)
+        assert all(r.address for m in sent for r in m.to)
+    newest = mail.list_messages(ctx, top=5, mailbox=MAILBOX)
+    if not newest:
+        pytest.skip("mailbox has no messages")
+
+    res = mail.get_message_headers(ctx, [m.id for m in newest], mailbox=MAILBOX)
+    assert res["ok"] == len(newest) and res["failed"] == []
+    curated = {f.name for f in fields(MessageHeaders)}
+    for headers in res["headers"].values():
+        assert set(headers) == curated  # never the raw bag Graph returned
+        assert all(len(v) <= 200 for v in headers.values()
+                   if isinstance(v, str))
+    # get_message carries the same projection, from the same real headers
+    one = mail.get_message(ctx, newest[0].id, mailbox=MAILBOX)
+    assert one.headers is None or isinstance(one.headers.is_bulk, bool)
 
 
 def test_triage_cycle_read_state_flags_and_move(ctx):

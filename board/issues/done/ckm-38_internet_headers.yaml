@@ -1,0 +1,98 @@
+id: CKM-38
+title: Expose selected internet message headers — bulk/auto-reply detection
+column: done
+status: done
+created_at: '2026-08-05T02:42:00Z'
+updated_at: '2026-08-05T16:30:00Z'
+assignees: []
+description: |-
+  claude (2026-08-05): there is no way to see a message's internet headers,
+  so "is this a newsletter / an auto-reply / a bulk send" can only be guessed
+  from the subject line. Subject regex is a poor instrument for this and gets
+  it wrong in both directions — it misses bulk mail sent from a named
+  person's address, and it misfires on ordinary mail that happens to match.
+
+  The headers answer it definitively, and cheaply:
+  - List-Unsubscribe / List-Id  -> bulk mailing list. This single header is
+    a better newsletter classifier than any amount of subject matching, and
+    it is the one senders are obliged to set.
+  - Precedence: bulk | list | junk  -> bulk.
+  - Auto-Submitted: auto-replied | auto-generated  -> automated. The
+    standard signal for an out-of-office, which otherwise looks exactly like
+    a real reply from a real colleague's mailbox.
+  - X-Auto-Response-Suppress  -> automated (Microsoft's own).
+  - Return-Path differing from From  -> sent on behalf of / ESP.
+
+  Sketch (read tier — internetMessageHeaders is an ordinary message
+  property; no new consent):
+  - Expose a small NAMED SUBSET, not the raw header bag. Headers are
+    attacker-controlled free text and some carry routing detail and internal
+    hostnames; returning all of them puts unbounded untrusted text into an
+    agent's context for no benefit. Curate the list above, and require a new
+    issue to extend it.
+  - Header values are still untrusted even when curated. Document that: a
+    forged List-Unsubscribe proves nothing except that someone wrote it. The
+    legitimate use is classification and prioritisation, never authorisation
+    or trust.
+  - internetMessageHeaders is NOT returned on a collection GET — it needs a
+    per-message fetch. So this cannot be a free field on list_messages.
+    Either surface it on get_message only, or provide a deliberate bulk
+    helper that the caller knows costs one request per message. Do not make
+    list_messages silently N+1.
+  - Consider deriving a single classification flag (is_bulk / is_auto_reply)
+    alongside the raw values, so every caller does not re-implement the same
+    interpretation. Keep the raw values too — a derived flag that cannot be
+    audited is worse than none.
+
+  Out of scope: full header dumps, DKIM/SPF/DMARC verification results (a
+  larger topic, and a genuinely useful one later for trust decisions —
+  file separately if wanted), and any header-based filtering server-side
+  (Graph does not support it).
+dependencies: []
+parent_id: null
+priority: medium
+issue_type: feature
+tags: [mail, read-tier, classification]
+requested_by: claude
+due_date: null
+history:
+- at: '2026-08-05T02:42:00Z'
+  by: claude
+  details: Filed after a consumer design was left doing bulk/auto-reply
+    detection by subject regex for want of header access
+  event: created
+- at: '2026-08-05T13:00:00Z'
+  by: claude
+  details: Moved to doing — implemented alongside CKM-37 as one slice
+  event: moved
+- at: '2026-08-05T16:30:00Z'
+  by: claude
+  details: 'Done in v2.3.0. get_message_headers(message_ids) — read tier, curated,
+    batched 20 to a /$batch round trip in the same id-list/partial-failure shape as
+    the CKM-33 triage tools but without the write gate; get_message carries the same
+    projection for a single message. Curated subset exactly as specified
+    (List-Unsubscribe, List-Id, Precedence, Auto-Submitted,
+    X-Auto-Response-Suppress, Return-Path), never the raw bag, with is_bulk and
+    is_auto_reply DERIVED alongside the raw values so the derivation is auditable.
+    Values are sanitised (control characters become spaces — a header must not
+    inject line breaks into a log or a context) and capped at 200 chars with a
+    trailing ellipsis; live sampling showed only List-Unsubscribe ever exceeds that
+    (mean ~330, max 543). The untrusted-input warning is in the tool docstring and
+    the model docstring, both saying classification and prioritisation, never
+    authorisation or trust. THE ISSUE''S SKETCH WAS WRONG ON ONE FACT:
+    internetMessageHeaders IS returned on a collection GET when explicitly
+    $selected — verified on both tenants, 25/25 rows populated, 47-86 headers each.
+    So the N+1 hazard the issue was guarding against does not exist. The tool stays
+    per-message and deliberate anyway, but on VOLUME grounds instead: those rows
+    cost ~10.6-11 KB each, ~11x a summary row, which is the real reason
+    list_messages must not carry them (a test asserts it never asks for them).
+    Recorded in AGENTS.md gotchas so the next agent does not re-derive it. Return-
+    Path is returned raw with no derived flag: a differing Return-Path is normal
+    for VERP and ESP traffic, so a flag would have been noise — the caller compares
+    it with the sender itself. Live: over 25 real inbox messages per tenant is_bulk
+    found 7 and 14, of which a representative subject regex missed 7 and 6 while
+    producing 5 false positives of its own on one tenant; is_auto_reply found 0 and
+    7. No new consent (Mail.Read). Full header dumps, DKIM/SPF/DMARC results and
+    header-based server-side filtering stayed out.'
+  event: completed
+version: 3

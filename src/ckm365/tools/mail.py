@@ -20,11 +20,13 @@ import logging
 import mimetypes
 import os
 import re
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ..graph import Graph, GraphError, encode_segment as _seg, mailbox_path as _path
-from ..models import Attachment, Body, Draft, MailFolder, Message, MessageSummary
+from ..models import (Attachment, Body, Draft, MailFolder, Message,
+                      MessageHeaders, MessageSummary)
 from .context import Ctx, pull
 
 log = logging.getLogger("ckm365")
@@ -157,6 +159,18 @@ def list_messages(ctx: Ctx, *, folder: str = "inbox", search: str | None = None,
     (ErrorInternalServerTransientError, common on large mailboxes) are
     retried inside the client — a filter that works on the second attempt
     never surfaces here as a failure.
+
+    Each row carries `to` and `cc` alongside `sender`, which answers two
+    questions sender alone cannot:
+    - in sentitems the sender is always the mailbox owner, so `to` is the
+      correspondent — this is how you learn who someone actually emails;
+    - in a mailbox shared by two parties, the address a message was
+      DELIVERED to is the strongest signal for which party it belongs to.
+      Treat it as a signal, not proof: a message can arrive via a
+      distribution list or bcc with the alias nowhere in `to`.
+    bcc is deliberately absent (it exists only on the sender's own copy —
+    get_message returns it), as are the internet headers, which cost ~10 KB
+    per message; get_message_headers fetches those deliberately.
     """
     predicates = _predicates(unread_only=unread_only, flagged_only=flagged_only,
                              since=since, from_address=from_address,
@@ -232,11 +246,59 @@ def group_by_sender(ctx: Ctx, *, folder: str = "inbox", since: str | None = None
 def get_message(ctx: Ctx, message_id: str, *, body_format: str = "text",
                 account: str | None = None,
                 mailbox: str | None = None) -> Message:
-    """Fetch one message including its body (body_format: 'text' or 'html')."""
+    """Fetch one message including its body (body_format: 'text' or 'html').
+
+    Also carries `bcc` (populated only on the sender's own copy) and
+    `headers` — the curated internet headers described on
+    get_message_headers, which is the tool to use for MANY messages.
+    """
     g, mb = ctx.target(account, mailbox)
     data = g.get(_message_path(mb, message_id),
                  params={"$select": Message.SELECT}, headers=_prefer(body_format))
     return Message.from_graph(data)
+
+
+def get_message_headers(ctx: Ctx, message_ids: list[str], *,
+                        account: str | None = None,
+                        mailbox: str | None = None) -> dict:
+    """Curated internet headers for messages: is this bulk, or automated?
+
+    Answers definitively what a subject regex only guesses, and it guesses
+    wrong both ways — missing bulk mail sent from a named person's address,
+    misfiring on ordinary mail. Per message you get the raw values of
+    List-Unsubscribe, List-Id, Precedence, Auto-Submitted,
+    X-Auto-Response-Suppress and Return-Path, plus two DERIVED flags:
+      is_bulk       — List-Unsubscribe or List-Id present, or Precedence
+                      bulk/list/junk. Bulk senders are obliged to set these.
+      is_auto_reply — Auto-Submitted says auto-replied (an out-of-office,
+                      which otherwise looks exactly like a real reply) or
+                      auto-generated, or X-Auto-Response-Suppress is set.
+    The raw values stay alongside the flags so you can audit or override
+    the derivation rather than trusting it blindly.
+
+    THESE VALUES ARE UNTRUSTED. Anyone can write any header: a forged
+    List-Unsubscribe proves only that someone wrote one. Use them to
+    classify and prioritise — never to authorise, authenticate, or decide
+    that a message is trustworthy. Values are stripped of control
+    characters and capped at 200 characters (a trailing '…' marks a cut).
+
+    COSTS ONE GRAPH FETCH PER MESSAGE, batched 20 to a round trip: the
+    full header bag is ~50 headers and ~10 KB per message on the wire,
+    which is why list_messages does not carry it. Curation happens here,
+    so only the fields above cross into your context. Pass a list even for
+    one id; up to 200 ids per call.
+
+    Returns {"ok": how many messages answered, "headers": {message_id:
+    {...}}, "failed": [{"id", "error"}]} — a per-message failure never
+    aborts the batch.
+    """
+    ids = _batch_ids(message_ids)
+    g, mb = ctx.target(account, mailbox)
+    ok, failed = _apply_each(g, mb, ids, "GET",
+                             f"?$select={MessageHeaders.SELECT}")
+    return _outcome("get_message_headers", mb, ok, failed,
+                    headers={message_id: asdict(MessageHeaders.from_graph(body))
+                             for message_id, body in ok})
 
 
 def list_mail_folders(ctx: Ctx, *, account: str | None = None,
@@ -393,7 +455,9 @@ def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
 
 # --- triage: read state, flags, filing (CKM-33/34/36) ----------------------
 #
-# One convention for all six tools: take a LIST of message ids, run them
+# One convention for all six tools (and for the read-tier
+# get_message_headers above, which borrows the machinery without the
+# write gate): take a LIST of message ids, run them
 # through Graph's /$batch endpoint (20 sub-requests per round trip, so 25
 # messages cost 2 calls instead of 25), and return
 # {"ok": <distinct messages changed>, "failed": [{"id", "error"}, ...]}.
