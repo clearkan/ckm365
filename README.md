@@ -59,8 +59,11 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
   never part of the default consent set.
 - **Draft-only mail writes** — replies/forwards seeded via Graph
   `createReply`/`createReplyAll`/`createForward`, then PATCHed (with
-  `If-Match`); never modify delivered messages. `send_draft` only sends
-  drafts, and only in the send tier.
+  `If-Match`); never modify delivered message CONTENT. `send_draft` only
+  sends drafts, and only in the send tier. The triage tools are the one
+  thing that touches delivered mail, and only its metadata (read state,
+  flag, folder) — write tier, never send tier, since nothing leaves the
+  tenant.
 - **No secrets in repo** — env vars or key material outside git only; token
   caches are 0600 files under `~/.local/state/ckm365/` with cross-process
   locking. Logs carry ids and counts, never bodies, subjects, or tokens.
@@ -70,7 +73,7 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 | Server flags | Tools exposed | Delegated scopes requested |
 |---|---|---|
 | *(none)* | reads + `list_accounts` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
-| `--write` | + draft/calendar writes, attachments | `*.ReadWrite[.Shared]` |
+| `--write` | + draft/calendar writes, attachments, triage (read state, flags, move) | `*.ReadWrite[.Shared]` |
 | `--write --enable-send` | + `send_draft`, attendee-bearing event writes, meeting responses | + `Mail.Send[.Shared]` |
 
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
@@ -125,11 +128,13 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 22 tools (mail /
-calendar / watch / accounts / teams), three-tier gating, admin CLI, live
-integration suite, the thread-safety contract and supported programmatic
-API (SemVer'd; releases are tagged `vX.Y.Z` for downstream pinning), and
-app-only mode with Exchange RBAC-only scoping (v1.6.0, incl. the
-out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
-dataclass models; v2.1.0 adds read-only Teams discovery. Security +
-simplification reviews done. Next: SharePoint/Teams file sync (CKM-18).
+Phases 1–2 complete and live-verified on two tenants: 29 tools (mail /
+calendar / watch / accounts / teams / meetings), three-tier gating, admin
+CLI, live integration suite, the thread-safety contract and supported
+programmatic API (SemVer'd; releases are tagged `vX.Y.Z` for downstream
+pinning), and app-only mode with Exchange RBAC-only scoping (v1.6.0, incl.
+the out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
+dataclass models; v2.1.0 adds read-only Teams discovery; v2.2.0 adds the
+mail triage slice — batched read-state/flag/move tools and reliable
+server-side filtering. Security + simplification reviews done. Next:
+SharePoint/Teams file sync (CKM-18).

@@ -1,0 +1,90 @@
+id: CKM-35
+title: Reliable server-side filtering (unread / flagged / since) + transient retry
+column: done
+status: done
+created_at: '2026-08-05T00:14:00Z'
+updated_at: '2026-08-05T12:30:00Z'
+assignees: []
+description: |-
+  claude (2026-08-05): list_messages already takes an OData `filter`, but in
+  real use on a high-volume mailbox it failed and there was no good fallback.
+  This is the issue that made a triage task slow and fragile.
+
+  What actually happened:
+  - `filter="isRead eq false"` returned HTTP 503
+    "ErrorInternalServerTransientError ... Cannot query rows in a table"
+    on a large mailbox. Twice in a row, so not a one-off blip.
+  - With no working server-side filter, the fallback was to page unfiltered
+    and classify client-side. That meant pulling 1200-6000 messages to find
+    ~20 interesting ones. One 6000-message pass exceeded a 120s tool
+    timeout and had to be backgrounded.
+  - Cost is not just latency: every one of those messages crosses the
+    agent's context boundary if the caller is not careful.
+
+  Required:
+  - RETRY TRANSIENTS. 503 ErrorInternalServerTransientError and 429 are
+    retryable with backoff; the Graph client already has retry plumbing for
+    throttling — filtered list calls must use it. A filter that works on
+    the second attempt should never surface as a failure at all.
+  - First-class predicates instead of hand-written OData, because the
+    hand-written form is where the fragility lives:
+      unread_only: bool
+      flagged_only: bool
+      since: ISO date/datetime  (receivedDateTime ge ...)
+      from_address: str
+    These compose into one $filter server-side. Keep the raw `filter`
+    escape hatch for anything not covered.
+  - DOCUMENT the search/filter exclusivity that already exists (they cannot
+    be combined, and filtered results come back in Graph's default order,
+    not the requested $orderby). This surprised the caller mid-task.
+  - Where a predicate genuinely cannot be pushed server-side, say so in the
+    return value rather than silently degrading to a full scan. A caller
+    that knows it is scanning can bound it; one that does not will hang.
+
+  Nice to have, sharply useful for triage: group_by_sender(folder, since)
+  returning sender -> {total, unread} counts without returning message
+  bodies. The motivating analysis — "which senders actually generate this
+  volume" — needed exactly this and had to be done by scanning everything.
+  Six automated senders accounted for ~40% of inbox volume; that fact took
+  1500 messages through context to establish and should have been one call.
+
+  Out of scope v1: cross-folder search (its own issue), and any caching of
+  message metadata between calls.
+dependencies: []
+parent_id: null
+priority: high
+issue_type: feature
+tags: [mail, read-tier, performance]
+requested_by: claude
+due_date: null
+history:
+- at: '2026-08-05T00:14:00Z'
+  by: claude
+  details: Issue created after a filtered list call failed with a transient 503
+    on a large mailbox and forced a multi-thousand-message client-side scan
+  event: created
+- at: '2026-08-05T09:00:00Z'
+  by: claude
+  details: Moved to doing — implementing CKM-33/34/35/36 as one triage slice
+  event: moved
+- at: '2026-08-05T12:30:00Z'
+  by: claude
+  details: 'Done in v2.2.0. unread_only/flagged_only/since/from_address compose into
+    ONE server-side $filter, with the raw filter ANDed in alongside rather than
+    competing. group_by_sender added (read tier, $select=from,isRead only). The
+    search/filter exclusivity and the loss of newest-first ordering under any
+    filter are now spelled out in the docstring. Two corrections to the issue''s
+    own sketch, recorded rather than silently worked around: (1) filtered list
+    calls were NOT bypassing the retry plumbing — GET already retried 503 — the
+    budget was simply too short, three retries on a 0.2s base landing inside one
+    blip, so the fix is 5 retries on a 1s base for 503/504 while throttling keeps
+    its old budget and Retry-After handling; (2) "say so in the return value where
+    a predicate cannot be pushed server-side" turned out to have no case to
+    report — all four predicates push to Graph, nothing degrades to a scan, and
+    list_messages keeps returning list[MessageSummary] rather than taking a
+    breaking return-shape change to carry a field that would always be empty. Live:
+    isRead eq false (the filter that 503''d) returns server-side on both tenants,
+    and group_by_sender walked 500 messages into 148/106 senders in one call.
+    Cross-folder search and metadata caching stayed out.'
+  event: completed
+version: 3

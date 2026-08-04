@@ -222,18 +222,22 @@ def test_write_tools_gated():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 8  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 13
-    assert len(tools_for(["mail"], write=True, send=True)) == 14
+    assert len(tools_for(["mail"])) == 9  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 20
+    assert len(tools_for(["mail"], write=True, send=True)) == 21
     assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
     assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
+    # The triage tools (CKM-33/34/36) are write tier, not send tier: read
+    # state, flags and folder are metadata and nothing leaves the tenant.
+    assert mail.mark_read not in tools_for(["mail"])
+    assert mail.group_by_sender in tools_for(["mail"])  # counting is a read
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 18
-    assert len(tools_for(["all"], write=True, send=True)) == 19
+    assert len(tools_for(["all"], write=True)) == 25
+    assert len(tools_for(["all"], write=True, send=True)) == 26
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 22
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 29
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -586,11 +590,14 @@ def test_blessed_api_import_contract():
     from ckm365.tools.calendar import (create_event, get_event,    # noqa: F401
                                        list_events, respond_event,
                                        update_event)
-    from ckm365.tools.mail import (add_attachment, create_draft,   # noqa: F401
-                                   create_forward_draft,
-                                   create_reply_draft, get_message,
+    from ckm365.tools.mail import (add_attachment, complete_flag,  # noqa: F401
+                                   create_draft, create_forward_draft,
+                                   create_reply_draft, flag,
+                                   get_message, group_by_sender,
                                    list_attachments, list_mail_folders,
-                                   list_messages, send_draft, update_draft)
+                                   list_messages, mark_read, mark_unread,
+                                   move_message, send_draft, unflag,
+                                   update_draft)
     from ckm365.tools.teams import (list_channels,                 # noqa: F401
                                     list_installed_apps, list_teams)
     from ckm365.tools.watch import (get_watch_command,             # noqa: F401
@@ -602,6 +609,7 @@ def test_blessed_api_import_contract():
                    "__exit__"):
         assert callable(getattr(Ctx, method)), method
     assert "transport" in inspect.signature(Graph.__init__).parameters
+    assert callable(Graph.batch)  # the batched-write primitive (CKM-33)
 
 
 def test_serve_without_mcp_exits_actionably(monkeypatch):

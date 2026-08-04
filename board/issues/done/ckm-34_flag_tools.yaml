@@ -1,0 +1,76 @@
+id: CKM-34
+title: flag / unflag a message, with optional due date — and list what is flagged
+column: done
+status: done
+created_at: '2026-08-05T00:12:00Z'
+updated_at: '2026-08-05T12:30:00Z'
+assignees: []
+description: |-
+  seanwy (2026-08-05): flagging is the second half of a triage pass. The
+  working pattern is: clear the unread pile first, then work the flagged
+  queue. The server currently supports neither half of that.
+
+  Graph models this as a single `flag` property on the message:
+    flag: {flagStatus: notFlagged|flagged|complete,
+           startDateTime, dueDateTime, completedDateTime}
+
+  Sketch (write tier, same scope as CKM-33):
+  - flag(message_ids, due: str | None = None, start: str | None = None)
+    A flag with NO date is the common case and must be the default — an
+    agent should not have to invent a date to mark something for later.
+    When due is given, set dueDateTime (and startDateTime, which Graph
+    expects alongside it; default start to now if only due is supplied,
+    rather than failing).
+  - unflag(message_ids) -> flagStatus notFlagged
+  - complete_flag(message_ids) -> flagStatus complete + completedDateTime.
+    Distinct from unflag: "done" and "never mind" are different outcomes
+    and a triage log wants to tell them apart.
+  - Batch and partial-failure semantics identical to CKM-33. Do not invent
+    a second convention.
+  - Dates are timezone-bearing. Graph wants {dateTime, timeZone}; accept a
+    plain ISO string from the caller and normalise, but do NOT silently
+    assume UTC for a bare date — a flag due "today" in the wrong zone is
+    wrong by up to a day. Default to the profile/mailbox timezone and say
+    which was used in the return value.
+
+  Listing flagged mail is the other half and is covered by CKM-35's
+  filtering work rather than duplicated here — flagged is just another
+  server-side predicate. This issue owns SETTING the flag; CKM-35 owns
+  FINDING flagged mail reliably.
+
+  Out of scope v1: reminders (a separate Graph concept from flags),
+  categories/colour, and flagging calendar items.
+dependencies: [CKM-35]
+parent_id: null
+priority: high
+issue_type: feature
+tags: [mail, write-tier, triage]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-05T00:12:00Z'
+  by: claude
+  details: Issue created from seanwy's triage-workflow request — clear unread,
+    then work the flagged queue
+  event: created
+- at: '2026-08-05T09:00:00Z'
+  by: claude
+  details: Moved to doing — implementing CKM-33/34/35/36 as one triage slice
+  event: moved
+- at: '2026-08-05T12:30:00Z'
+  by: claude
+  details: 'Done in v2.2.0. flag/unflag/complete_flag share CKM-33''s batching and
+    partial-failure convention exactly. A dateless flag is the default. Zone
+    resolution: an offset in the value (normalised to UTC) -> the timezone argument
+    -> a new optional timezone key on the profile; none of those raises rather than
+    guessing, and the zone used is reported back. Design note worth recording: the
+    issue said "default to the profile/mailbox timezone", and the MAILBOX half is
+    not reachable — /mailboxSettings needs MailboxSettings.Read, a scope this app
+    deliberately does not request, so probing it would cost a round trip and 403 in
+    every current deployment. Profile config only, documented in
+    profiles.example.toml. Supplying only due defaults start to now (Graph wants
+    both) rather than failing, as specified. Live-verified on two tenants;
+    flagStatus read back as flagged/complete/notFlagged. Reminders, categories and
+    calendar flags stayed out.'
+  event: completed
+version: 3

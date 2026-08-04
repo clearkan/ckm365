@@ -16,6 +16,10 @@ via the profile's .Shared delegated scopes (counts printed, nothing else).
 first team's channels and installed apps. Needs the separate Teams
 consent tier (scripts/add-teams-scopes.sh); without it Graph returns 403,
 which this reports as a skip rather than a failure.
+--triage exercises the read half of the triage slice (CKM-35): the
+server-side predicates on list_messages and the group_by_sender
+aggregate. Prints counts and truncated sender ids only — never subjects
+or full addresses. Needs no consent beyond the base read tier.
 --transcripts walks recent calendar events with a Teams join URL,
 resolves each to an online meeting, and reports how many have a
 transcript (CKM-30). Needs add-transcript-scopes.sh AND the Teams admin
@@ -30,7 +34,8 @@ from datetime import UTC, datetime, timedelta
 from ckm365.graph import GraphError
 from ckm365.tools import Ctx
 from ckm365.tools.calendar import list_events
-from ckm365.tools.mail import list_mail_folders, list_messages
+from ckm365.tools.mail import (group_by_sender, list_mail_folders,
+                               list_messages)
 from ckm365.tools.meetings import (find_meeting_id,
                                    get_meeting_transcript,
                                    list_meeting_transcripts)
@@ -41,6 +46,7 @@ parser.add_argument("profile", nargs="?", default=None)
 parser.add_argument("--deny", metavar="MAILBOX", default=None)
 parser.add_argument("--shared", metavar="MAILBOX", default=None)
 parser.add_argument("--teams", action="store_true")
+parser.add_argument("--triage", action="store_true")
 parser.add_argument("--transcripts", action="store_true")
 parser.add_argument("--days", type=int, default=60,
                     help="how far back --transcripts looks")
@@ -75,6 +81,21 @@ if args.shared:
                  "for the signed-in user; grant via Exchange Online: "
                  f"Add-MailboxPermission {args.shared} -User <upn> "
                  "-AccessRights FullAccess -AutoMapping $false")
+
+if args.triage:
+    since = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+    unread = list_messages(ctx, unread_only=True, top=25)
+    print(f"unread (server-side filter): {len(unread)} fetched, "
+          f"all unread={all(not m.is_read for m in unread)}")
+    print(f"flagged (server-side filter): "
+          f"{len(list_messages(ctx, flagged_only=True, top=25))} fetched")
+    print(f"since {since}: {len(list_messages(ctx, since=since, top=25))} fetched")
+    stats = group_by_sender(ctx, max_scan=500)
+    print(f"group_by_sender: scanned {stats['scanned']} "
+          f"(truncated={stats['truncated']}) → {len(stats['senders'])} senders")
+    for entry in stats["senders"][:5]:  # domains only — never a full address
+        domain = entry["address"].rpartition("@")[2] or "?"
+        print(f"  …@{domain}: total={entry['total']} unread={entry['unread']}")
 
 if args.teams:
     try:

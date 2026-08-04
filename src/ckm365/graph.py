@@ -4,13 +4,21 @@ Retry policy (from the Softeria reference study, docs/reference-notes.md):
 429 retries on any method honouring Retry-After (Graph throttles before
 executing, so the side effect never landed); 503/504/transport errors retry
 on idempotent methods only; everything else surfaces immediately.
+
+Transient 5xx gets a LONGER budget than throttling (CKM-35). Graph answers
+`ErrorInternalServerTransientError` for a cold or large mailbox — a filtered
+`list_messages` on a high-volume inbox hit it twice in a row and surfaced as
+a hard failure, because three sub-second retries all landed inside the same
+blip. Same retry path, more patience: 5 attempts on a ~1s base instead of 3
+on a 0.2s one (~6s expected, ~17s worst case, still far under a tool
+timeout).
 """
 
 import email.utils
 import logging
 import random
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
@@ -24,10 +32,13 @@ log = logging.getLogger("ckm365")
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _IDEMPOTENT = {"GET", "HEAD", "PUT", "DELETE"}
 _MAX_RETRIES = 3
+_MAX_TRANSIENT_RETRIES = 5  # 503/504 outlive throttling blips — see above
 _BASE_BACKOFF = 0.2
+_TRANSIENT_BACKOFF = 1.0
 _MAX_BACKOFF = 5.0
 _RETRY_AFTER_CAP = 60.0
 _MAX_SEGMENT = 1024
+_BATCH_LIMIT = 20  # Graph's hard cap on sub-requests per /$batch
 
 
 class GraphError(Exception):
@@ -108,21 +119,24 @@ class Graph:
             except httpx.TransportError:
                 if method not in _IDEMPOTENT or attempt >= _MAX_RETRIES:
                     raise
+            transient = resp is not None and resp.status_code in (503, 504)
+            budget = _MAX_TRANSIENT_RETRIES if transient else _MAX_RETRIES
             if resp is not None:
                 retriable = resp.status_code == 429 or (
-                    resp.status_code in (503, 504) and method in _IDEMPOTENT)
+                    transient and method in _IDEMPOTENT)
                 if not retriable:
                     if resp.is_success:
                         return resp
                     raise self._error(resp)
-                if attempt >= _MAX_RETRIES:
+                if attempt >= budget:
                     raise self._error(resp)
             delay = _retry_after(resp.headers.get("retry-after")) \
                 if resp is not None and resp.status_code == 429 else None
             if delay is None:
-                delay = random.uniform(0, min(_MAX_BACKOFF, _BASE_BACKOFF * 2 ** attempt))
+                base = _TRANSIENT_BACKOFF if transient else _BASE_BACKOFF
+                delay = random.uniform(0, min(_MAX_BACKOFF, base * 2 ** attempt))
             log.warning("graph retry %d/%d after %s (sleep %.1fs)", attempt + 1,
-                        _MAX_RETRIES, resp.status_code if resp else "transport error",
+                        budget, resp.status_code if resp else "transport error",
                         delay)
             time.sleep(delay)
             attempt += 1
@@ -135,6 +149,50 @@ class Graph:
 
     def patch(self, path: str, **kw: Any) -> dict[str, Any]:
         return self.request("PATCH", path, **kw) or {}
+
+    def batch(self, requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """Run many sub-requests through /$batch, 20 at a time (Graph's cap).
+
+        Each request is {"method", "url", "body"?}, where url is relative to
+        the service root ("/users/x/messages/y") — the same shape
+        mailbox_path() produces. Returns one {"status", "body"} per input
+        request IN INPUT ORDER: Graph answers out of order, so sub-responses
+        are re-keyed here by their request id.
+
+        A failing SUB-request is data, not an exception — the batch itself
+        succeeds and each caller decides what a per-item 404 means. The one
+        exception is throttling: a sub-request answered 429 never executed,
+        so it is re-sent once (the same reasoning that lets _send retry 429
+        on any method). Non-idempotent 5xx sub-failures are reported, not
+        retried, because we cannot know whether the side effect landed.
+        """
+        out: list[dict[str, Any]] = []
+        for start in range(0, len(requests), _BATCH_LIMIT):
+            chunk = requests[start:start + _BATCH_LIMIT]
+            answers = self._batch_chunk(chunk)
+            retry = [i for i, a in enumerate(answers) if a["status"] == 429]
+            if retry:
+                log.warning("graph batch: re-sending %d throttled sub-request(s)",
+                            len(retry))
+                time.sleep(random.uniform(0, _MAX_BACKOFF))
+                for i, again in zip(retry, self._batch_chunk(
+                        [chunk[i] for i in retry])):
+                    answers[i] = again
+            out += answers
+        return out
+
+    def _batch_chunk(self, chunk: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        payload = {"requests": [
+            {"id": str(i), "method": r["method"], "url": r["url"],
+             **({"body": r["body"],
+                 "headers": {"Content-Type": "application/json"}}
+                if r.get("body") is not None else {})}
+            for i, r in enumerate(chunk)]}
+        answered = {str(a.get("id")): a for a in
+                    (self.post("/$batch", json=payload) or {}).get("responses", [])}
+        return [{"status": int((answered.get(str(i)) or {}).get("status") or 0),
+                 "body": (answered.get(str(i)) or {}).get("body")}
+                for i in range(len(chunk))]
 
     def paged(self, path: str, *, params: Mapping[str, str] | None = None,
               max_items: int = 100,

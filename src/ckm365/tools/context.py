@@ -24,8 +24,9 @@ from ..graph import Graph
 
 log = logging.getLogger("ckm365")
 
-_LOG_KEYS = ("account", "mailbox", "folder", "message_id", "event_id",
-             "reply_all", "file_path", "to", "attendees")
+_LOG_KEYS = ("account", "mailbox", "folder", "message_id", "message_ids",
+             "event_id", "reply_all", "file_path", "to", "attendees",
+             "destination")
 
 
 class WriteDisabled(RuntimeError):
