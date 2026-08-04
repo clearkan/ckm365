@@ -13,7 +13,8 @@ from pathlib import Path
 _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
-                 "description", "allow_send"}
+                 "description", "allow_send", "timezone"}
+_TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
 AUTH_MODES = ("device_code", "client_credential")
 
 
@@ -31,6 +32,13 @@ class Profile:
     description: str = ""  # optional, surfaced to agents via list_accounts
     allow_send: bool = True  # false hard-caps the send tier for this profile,
                              # regardless of server flags (defense in depth)
+    timezone: str | None = None  # this mailbox's zone (IANA or the Windows
+                                 # name Graph also accepts). Used where a
+                                 # bare date would otherwise be guessed —
+                                 # mail.flag due dates (CKM-34). Reading it
+                                 # from Graph would need MailboxSettings.Read,
+                                 # a scope this app deliberately never asks
+                                 # for, so it is configured, not discovered.
 
     def __post_init__(self) -> None:
         if not _NAME_RE.fullmatch(self.name):
@@ -52,6 +60,11 @@ class Profile:
             # a string like "false" is truthy — the cap must never fail open
             raise ConfigError(
                 f"profile {self.name!r}: allow_send must be a TOML boolean"
+            )
+        if self.timezone is not None and not _TZ_RE.fullmatch(self.timezone):
+            raise ConfigError(
+                f"profile {self.name!r}: timezone must be a zone name like "
+                "'Europe/London' or 'GMT Standard Time'"
             )
 
     def _env(self, key: str) -> str:

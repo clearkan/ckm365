@@ -13,8 +13,9 @@ ALWAYS = [accounts.list_accounts]  # registered with every preset
 #              Teams tenant setting, not just Graph consent
 READ = {
     "mail": [mail.list_messages, mail.get_message, mail.list_mail_folders,
-             mail.list_attachments, watch.list_new_messages,
-             watch.wait_for_message, watch.get_watch_command],
+             mail.list_attachments, mail.group_by_sender,
+             watch.list_new_messages, watch.wait_for_message,
+             watch.get_watch_command],
     "calendar": [calendar.list_events, calendar.get_event],
     "teams": [teams.list_teams, teams.list_channels,
               teams.list_installed_apps],
@@ -23,7 +24,11 @@ READ = {
 }
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,
-             mail.update_draft, mail.create_draft, mail.add_attachment],
+             mail.update_draft, mail.create_draft, mail.add_attachment,
+             # triage: metadata only — read state, flags, filing. Nothing
+             # leaves the tenant, so these are write tier, not send tier.
+             mail.mark_read, mail.mark_unread, mail.flag, mail.unflag,
+             mail.complete_flag, mail.move_message],
     "calendar": [calendar.create_event, calendar.update_event,
                  calendar.respond_event],
     "teams": [],

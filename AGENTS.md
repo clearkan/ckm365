@@ -105,8 +105,15 @@ breaking change — `tests/test_offline.py` carries the import contract.
   then PATCH the top (`_insert_top`), with If-Match.
 - MCP tool schemas come from `bind()`-trimmed signatures; after changing
   tools the running MCP server needs a reconnect (`/mcp`) to show them.
-- First Graph hit on a cold mailbox can 503 (`ErrorInternalServerTransient`)
-  past the retry budget — just retry the operation.
+- First Graph hit on a cold mailbox can 503
+  (`ErrorInternalServerTransientError`), and a FILTERED list on a large one
+  can 503 twice running. The old 3-retry/0.2s-base budget sat inside a
+  single blip; since v2.2.0 (CKM-35) 503/504 get 5 retries on a 1s base
+  while throttling keeps the old budget. Do not shrink it back.
+- Graph `/$batch` takes at most 20 sub-requests, answers them OUT OF ORDER
+  (match on the request `id`), needs `Content-Type: application/json` on
+  every sub-request carrying a body, and reports per-item failures as
+  sub-`status` inside an overall 200 — `Graph.batch()` handles all four.
 - Teams endpoints REJECT `$top` (400 "Query option 'Top' is not
   allowed"): `/me/joinedTeams`, `/teams/{id}/channels`,
   `/teams/{id}/installedApps` all refuse it — only the `/teams`
@@ -114,11 +121,15 @@ breaking change — `tests/test_offline.py` carries the import contract.
   client-side via `pull()`; `$select`/`$expand` are fine. Offline mocks
   accept anything, so this only showed up live (it did, on first run).
 
-## Current state (2026-08-01)
+## Current state (2026-08-05)
 
-Version 2.1.1. Phases 1-2 done and live-verified on both tenants: 22 tools
-(mail/calendar/watch/accounts/teams), three-tier gating, admin CLI, multi-user
-onboarding, event-driven wake pattern. v1.4.0 added the thread-safety
+Version 2.2.0. Phases 1-2 done and live-verified on both tenants: 29 tools
+(mail/calendar/watch/accounts/teams/meetings), three-tier gating, admin CLI,
+multi-user onboarding, event-driven wake pattern. v2.2.0 added the mail
+triage slice (CKM-33/34/35/36): batched `mark_read`/`mark_unread`/`flag`/
+`unflag`/`complete_flag`/`move_message` over Graph `/$batch`, first-class
+`unread_only`/`flagged_only`/`since`/`from_address` predicates plus
+`group_by_sender`, and a longer transient-5xx retry budget. v1.4.0 added the thread-safety
 contract and the SemVer'd programmatic API (ClearKan pins these tags);
 v1.5.0 the mcp>=2.0 floor fix, Ctx.set_graph, py.typed; v1.6.0 the
 app-only mode live-verified (CKM-5: RBAC-only scoping, scripted

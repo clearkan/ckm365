@@ -3,6 +3,92 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.2.0] — 2026-08-05
+
+The mail **triage** slice, filed from a real triage task that hit every one
+of these gaps in one sitting (CKM-33/34/35/36). 29 tools total.
+
+### Added
+- **Read state, batched** (CKM-33): `mark_read` / `mark_unread` take a
+  LIST of message ids and return `{"ok", "failed": [{"id", "error"}]}`.
+  Batch is the point, not a convenience — the run that motivated this
+  touched 25 messages, which per-message tools would make 25 round trips
+  and 25 approval prompts. Read state and folder stay independent: the
+  mail does not move.
+- **Flags** (CKM-34): `flag` (optional `due`/`start`), `unflag`,
+  `complete_flag`. A flag with **no date is the default** — an agent
+  should not have to invent one. `complete_flag` is deliberately distinct
+  from `unflag`: "done" and "never mind" are different triage outcomes.
+- **First-class filter predicates** (CKM-35): `list_messages` gains
+  `unread_only`, `flagged_only`, `since`, `from_address`, composed into
+  ONE server-side `$filter`. All four push to Graph — none degrades to a
+  client-side scan. The raw `filter` escape hatch remains and is now
+  ANDed in alongside rather than competing with them.
+- **`group_by_sender`** (CKM-35, read tier): sender → `{total, unread}`
+  for a folder, projecting `from,isRead` only, so no subject, preview or
+  body crosses the caller's context. Establishing "six automated senders
+  are ~40% of this inbox" previously cost 1500 messages of context; it is
+  now one call. Live: 500 messages → 148 senders in one round of paging.
+- **`move_message`** (CKM-36): files messages into a well-known folder or
+  a folder id, same convention as `list_messages`' `folder`. Returns the
+  `{old_id: new_id}` mapping, because a move mints a new id and the old
+  one becomes a dead reference. Refuses to create folders implicitly — an
+  unknown destination is an error naming the folders that exist. **Delete
+  is deliberately absent**: moving to `deleteditems` is reachable here and
+  reversible; permanent deletion is not, and does not belong in an
+  agent-callable surface.
+- `Graph.batch()` — the `/$batch` primitive behind all six write tools:
+  20 sub-requests per round trip, re-ordered back into input order (Graph
+  answers unordered), per-item failures reported as data rather than
+  raised, and throttled sub-requests re-sent once.
+- Optional `timezone` key in `profiles.toml`, and `--triage` on
+  `scripts/live-smoke.py` (read-only; prints counts and sender DOMAINS,
+  never full addresses).
+
+### Fixed
+- **Transient 503s outlived the retry budget** (CKM-35): a filtered
+  `list_messages` on a large mailbox answered
+  `503 ErrorInternalServerTransientError "Cannot query rows in a table"`
+  twice in a row and surfaced as a hard failure, forcing a fallback that
+  paged 1200–6000 messages to find ~20 and blew a 120s tool timeout. The
+  filtered path was never bypassing retry — the budget was simply too
+  short: three retries on a 0.2s base all landed inside one blip. 503/504
+  now get 5 retries on a 1s base (~6s expected, ~17s worst), while
+  throttling keeps the old budget and its `Retry-After` handling.
+
+### Notes
+- **No new consent.** Everything here is `Mail.ReadWrite`, already in the
+  delegated read-write scope set — a `--write` server needs nothing more.
+  Triage is **write tier, never send tier**: read state, flag and folder
+  are metadata, and nothing leaves the tenant.
+- **Bare dates are never silently UTC** for flags. Zone resolution is:
+  an offset in the value → the `timezone` argument → the profile's
+  `timezone`; none of those is an error, not a guess, because "due today"
+  in the wrong zone is wrong by up to a day. The zone actually used comes
+  back in the result. Reading the mailbox's own zone from Graph would
+  need `MailboxSettings.Read`, a scope this app deliberately does not
+  request — hence the config key.
+- **A filter drops Graph's ordering.** Documented on `list_messages` now:
+  `$search` cannot combine with any filter, and any `$filter` returns
+  results in Graph's default order, so `top` means "N matches", not "the
+  N newest". This surprised the caller mid-task.
+- Deliberately **out of scope**, per the issues: marking a whole folder
+  read in one call, filter-driven (rather than id-driven) state changes,
+  reminders, categories, copy, cross-mailbox moves, folder creation, and
+  cross-folder search.
+
+### Verified (live, both delegated tenants)
+- `tests/test_live.py` — 8 passed on each profile, including the new
+  triage cycle (read state → flags with and without dates → move →
+  delete) run against a message the suite creates, so no real mail is
+  touched, and the residue 404 check still passes.
+- Partial failure proven against Graph: a real id batched with a bogus one
+  returns `ok=1` plus one `failed` entry, not a dead batch.
+- `scripts/live-smoke.py --triage` on both tenants: `isRead eq false` —
+  the exact filter that 503'd — now returns server-side, and
+  `group_by_sender` scanned 500 messages into 148 / 106 senders.
+- Offline suite: 101 passed (was 73).
+
 ## [2.1.1] — 2026-08-01
 
 ### Fixed

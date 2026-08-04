@@ -108,3 +108,88 @@ def test_delta_bootstrap_returns_token_fast(ctx):
     boot = list_new_messages(Ctx.create(account=ACCOUNT), mailbox=MAILBOX)
     assert boot["delta_token"]
     assert boot["matched"] == 0 or boot["messages"]  # shape sanity
+
+
+def test_server_side_predicates_are_accepted_by_graph(ctx):
+    """CKM-35: every predicate must push into ONE $filter that Graph
+    accepts. Offline mocks accept any query string, so this is the only
+    place the OData is really checked — and the transient 503 that
+    motivated the issue only ever appeared on a real mailbox."""
+    unread = mail.list_messages(ctx, unread_only=True, top=5, mailbox=MAILBOX)
+    assert all(not m.is_read for m in unread)
+    assert isinstance(
+        mail.list_messages(ctx, flagged_only=True, top=5, mailbox=MAILBOX), list)
+    since = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+    recent = mail.list_messages(ctx, since=since, top=5, mailbox=MAILBOX)
+    assert all(m.received >= since for m in recent if m.received)
+    # all four at once, plus the raw escape hatch ANDed alongside
+    mail.list_messages(ctx, unread_only=True, since=since,
+                       from_address="nobody@tenant-b.example",
+                       filter="hasAttachments eq true", top=5, mailbox=MAILBOX)
+    with pytest.raises(ValueError, match="search cannot be combined"):
+        mail.list_messages(ctx, search="x", unread_only=True, mailbox=MAILBOX)
+
+
+def test_group_by_sender_aggregates_without_pulling_messages(ctx):
+    res = mail.group_by_sender(ctx, max_scan=200, mailbox=MAILBOX)
+    assert res["scanned"] <= 200
+    assert res["truncated"] is (res["scanned"] == 200)
+    assert sum(s["total"] for s in res["senders"]) == res["scanned"]
+    assert all(s["unread"] <= s["total"] for s in res["senders"])
+    totals = [s["total"] for s in res["senders"]]
+    assert totals == sorted(totals, reverse=True)  # busiest sender first
+
+
+def test_triage_cycle_read_state_flags_and_move(ctx):
+    """CKM-33/34/36 end to end against Graph, on a message this test
+    creates — real mail is never touched. Zero residue: the draft is
+    deleted at its post-move id and verified gone."""
+    _, mb = ctx.target(None, MAILBOX)
+    draft = mail.create_draft(ctx, to=[mb], subject="ckm365 live triage",
+                              body_html="<p>ckm365 live suite</p>",
+                              mailbox=MAILBOX)
+    current = draft.id
+    try:
+        assert mail.mark_read(ctx, [current], mailbox=MAILBOX) == \
+            {"ok": 1, "failed": []}
+        assert mail.get_message(ctx, current, mailbox=MAILBOX).is_read
+        assert mail.mark_unread(ctx, [current], mailbox=MAILBOX)["ok"] == 1
+        assert not mail.get_message(ctx, current, mailbox=MAILBOX).is_read
+
+        # a bad id alongside a good one must not strand the good one
+        partial = mail.mark_read(ctx, [current, "not-a-real-message-id"],
+                                 mailbox=MAILBOX)
+        assert partial["ok"] == 1 and len(partial["failed"]) == 1
+        assert partial["failed"][0]["id"] == "not-a-real-message-id"
+
+        assert mail.flag(ctx, [current], mailbox=MAILBOX)["timezone"] is None
+        assert _flag_status(ctx, current) == "flagged"
+        dated = mail.flag(ctx, [current], due="2026-12-24T17:00:00",
+                          timezone="Europe/London", mailbox=MAILBOX)
+        assert dated["ok"] == 1 and dated["timezone"] == "Europe/London"
+        assert mail.complete_flag(ctx, [current], mailbox=MAILBOX)["ok"] == 1
+        assert _flag_status(ctx, current) == "complete"
+        assert mail.unflag(ctx, [current], mailbox=MAILBOX)["ok"] == 1
+        assert _flag_status(ctx, current) == "notFlagged"
+
+        with pytest.raises(ValueError, match="never creates folders"):
+            mail.move_message(ctx, [current], "ckm365-no-such-folder",
+                              mailbox=MAILBOX)
+        moved = mail.move_message(ctx, [current], "archive", mailbox=MAILBOX)
+        assert moved["ok"] == 1 and moved["failed"] == []
+        # a move mints a NEW id — the old one is a dead reference
+        current = moved["moved"][draft.id]
+        assert current and current != draft.id
+        assert mail.get_message(ctx, current, mailbox=MAILBOX).id == current
+    finally:
+        _delete(ctx, "messages", current)
+    with pytest.raises(GraphError) as err:
+        mail.get_message(ctx, current, mailbox=MAILBOX)
+    assert err.value.status == 404  # residue check
+
+
+def _flag_status(ctx, message_id: str) -> str:
+    g, mb = ctx.target(None, MAILBOX)
+    data = g.get(mailbox_path(mb, f"messages/{encode_segment(message_id)}"),
+                 params={"$select": "flag"})
+    return (data.get("flag") or {}).get("flagStatus", "")
