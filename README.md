@@ -47,8 +47,8 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 - **KISS** — the obvious implementation over the clever one, one file per
   concern, no abstraction before a second caller needs it. Currently
-  ~1560 code lines across phases 1–2 (docstrings double as MCP tool
-  descriptions and are excluded); no single module exceeds ~320. There is
+  ~1960 code lines across phases 1–2 (docstrings double as MCP tool
+  descriptions and are excluded); no single module exceeds ~400. There is
   no hard line limit — readability is the constraint that matters.
 - **Two core runtime deps only**: `httpx`, `msal`. No
   `msgraph-sdk`. `mcp` is an **optional extra** (`ckm365[mcp]`) needed
@@ -128,7 +128,7 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 29 tools (mail /
+Phases 1–2 complete and live-verified on two tenants: 30 tools (mail /
 calendar / watch / accounts / teams / meetings), three-tier gating, admin
 CLI, live integration suite, the thread-safety contract and supported
 programmatic API (SemVer'd; releases are tagged `vX.Y.Z` for downstream
@@ -136,5 +136,6 @@ pinning), and app-only mode with Exchange RBAC-only scoping (v1.6.0, incl.
 the out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
 dataclass models; v2.1.0 adds read-only Teams discovery; v2.2.0 adds the
 mail triage slice — batched read-state/flag/move tools and reliable
-server-side filtering. Security + simplification reviews done. Next:
-SharePoint/Teams file sync (CKM-18).
+server-side filtering; v2.3.0 puts `to`/`cc` on every listing row and adds
+curated internet headers for bulk/auto-reply detection. Security +
+simplification reviews done. Next: SharePoint/Teams file sync (CKM-18).

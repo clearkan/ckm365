@@ -43,13 +43,96 @@ def _recipients(items: Any) -> list[Recipient]:
     return [Recipient.from_graph(r) for r in items or []]
 
 
+_CURATED_HEADERS = {  # lower-case wire name -> field (CKM-38: a NAMED subset)
+    "list-unsubscribe": "list_unsubscribe",
+    "list-id": "list_id",
+    "precedence": "precedence",
+    "auto-submitted": "auto_submitted",
+    "x-auto-response-suppress": "auto_response_suppress",
+    "return-path": "return_path",
+}
+_MAX_HEADER_VALUE = 200  # live sample: only List-Unsubscribe exceeds it
+_BULK_PRECEDENCE = {"bulk", "list", "junk"}
+
+
+def _header_value(value: Any) -> str:
+    """Sanitise ONE attacker-controlled header value before it is returned.
+
+    Control characters go (a header value must never inject line breaks
+    into a log or an agent's context), whitespace collapses, and the
+    result is capped — a trailing '…' marks a truncated value. The cap is
+    the point: classification needs presence, not an unbounded string
+    chosen by the sender.
+    """
+    text = " ".join("".join(c if 32 <= ord(c) != 127 else " "
+                            for c in str(value or "")).split())
+    return (text[:_MAX_HEADER_VALUE - 1] + "…"
+            if len(text) > _MAX_HEADER_VALUE else text)
+
+
+@dataclass
+class MessageHeaders:
+    """A CURATED subset of a message's internet headers (CKM-38).
+
+    Never the raw header bag: headers are attacker-controlled free text,
+    ~50 of them per real message, some carrying internal routing detail —
+    so a fixed list is projected and every value is sanitised and capped.
+    Extending the list is a new issue, deliberately.
+
+    THE VALUES ARE UNTRUSTED even here. A forged List-Unsubscribe proves
+    only that someone wrote one. They are for classification and
+    prioritisation, never for authorisation or trust decisions.
+
+    is_bulk / is_auto_reply are DERIVED, and the raw values sit alongside
+    so the derivation can be audited (and disagreed with).
+    """
+    SELECT: ClassVar[str] = "id,internetMessageHeaders"
+    list_unsubscribe: str | None = None
+    list_id: str | None = None
+    precedence: str | None = None
+    auto_submitted: str | None = None
+    auto_response_suppress: str | None = None
+    return_path: str | None = None
+    is_bulk: bool = False
+    is_auto_reply: bool = False
+
+    @classmethod
+    def from_graph(cls, d: dict[str, Any]) -> "MessageHeaders":
+        found: dict[str, str] = {}
+        for header in d.get("internetMessageHeaders") or []:
+            name = _CURATED_HEADERS.get((header.get("name") or "").strip().lower())
+            if name and name not in found:  # duplicates: first occurrence wins
+                found[name] = _header_value(header.get("value"))
+        submitted = (found.get("auto_submitted") or "").split(";")[0].strip().lower()
+        precedence = (found.get("precedence") or "").split(";")[0].strip().lower()
+        return cls(
+            **found,
+            # List-Unsubscribe/List-Id are what bulk senders are obliged to
+            # set, and beat any amount of subject matching.
+            is_bulk=bool(found.get("list_unsubscribe") or found.get("list_id")
+                         or precedence in _BULK_PRECEDENCE),
+            # RFC 3834: "no" means NOT auto-submitted; auto-replied (an
+            # out-of-office) and auto-generated both mean machine-sent.
+            is_auto_reply=bool((submitted and submitted != "no")
+                               or found.get("auto_response_suppress")))
+
+
 @dataclass
 class MessageSummary:
-    SELECT: ClassVar[str] = ("id,subject,from,receivedDateTime,bodyPreview,"
-                             "isRead,isDraft,hasAttachments")
+    # to/cc ride along on the collection GET (CKM-37): they are what
+    # identifies the correspondent in Sent Items, and the delivered-to
+    # address is the strongest signal for which party a message belongs to
+    # in a mailbox shared by two. Measured cost: +141 bytes/row (+17%).
+    # bcc is NOT here — it is populated only on the sender's own copy, so
+    # it would be an empty column on nearly every row; get_message has it.
+    SELECT: ClassVar[str] = ("id,subject,from,toRecipients,ccRecipients,"
+                             "receivedDateTime,bodyPreview,isRead,isDraft,"
+                             "hasAttachments")
     id: str
     subject: str | None = ""
     sender: Recipient | None = None
+    to: list[Recipient] = field(default_factory=list)
+    cc: list[Recipient] = field(default_factory=list)
     received: str | None = None
     preview: str | None = ""
     is_read: bool = False
@@ -61,6 +144,8 @@ class MessageSummary:
         return dict(
             id=d["id"], subject=d.get("subject", ""),
             sender=Recipient.from_graph(d["from"]) if d.get("from") else None,
+            to=_recipients(d.get("toRecipients")),
+            cc=_recipients(d.get("ccRecipients")),
             received=d.get("receivedDateTime"),
             preview=d.get("bodyPreview", ""),
             is_read=bool(d.get("isRead")),
@@ -75,23 +160,22 @@ class MessageSummary:
 @dataclass
 class Message(MessageSummary):
     SELECT: ClassVar[str] = (MessageSummary.SELECT +
-                             ",body,toRecipients,ccRecipients,bccRecipients,"
-                             "internetMessageId,webLink")
+                             ",body,bccRecipients,internetMessageId,"
+                             "internetMessageHeaders,webLink")
     body: Body | None = None
-    to: list[Recipient] = field(default_factory=list)
-    cc: list[Recipient] = field(default_factory=list)
     bcc: list[Recipient] = field(default_factory=list)
     internet_message_id: str | None = None
+    headers: MessageHeaders | None = None
     web_link: str | None = None
 
     @classmethod
     def _kw(cls, d: dict[str, Any]) -> dict[str, Any]:
         return super()._kw(d) | dict(
             body=Body.from_graph(d["body"]) if d.get("body") else None,
-            to=_recipients(d.get("toRecipients")),
-            cc=_recipients(d.get("ccRecipients")),
             bcc=_recipients(d.get("bccRecipients")),
             internet_message_id=d.get("internetMessageId"),
+            headers=MessageHeaders.from_graph(d)
+                    if d.get("internetMessageHeaders") else None,
             web_link=d.get("webLink"))
 
 

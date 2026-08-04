@@ -3,6 +3,98 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.3.0] — 2026-08-05
+
+Two gaps a downstream consumer hit on the same triage design (CKM-37/38):
+message listings could not say who a message was addressed TO, and nothing
+could say whether it was bulk or machine-sent. 30 tools total.
+
+### Added
+- **`to` and `cc` on every listing row** (CKM-37): `MessageSummary` gains
+  them and `list_messages` selects them, which unblocks two things at
+  once. In **sentitems** the sender is always the mailbox owner, so the
+  recipient IS the correspondent — "who does this user actually email"
+  was previously unanswerable from the one folder that knows. And in a
+  mailbox **shared by two parties**, the address a message was delivered
+  to is the strongest available signal for which party it belongs to;
+  the fallback (subject and counterparty-domain heuristics) was weakest
+  exactly where being wrong costs most, since different retention and
+  disclosure expectations attach to each party.
+- **`get_message_headers`** (CKM-38, read tier): a CURATED subset of a
+  message's internet headers for many messages at once —
+  `List-Unsubscribe`, `List-Id`, `Precedence`, `Auto-Submitted`,
+  `X-Auto-Response-Suppress`, `Return-Path` — plus derived `is_bulk` and
+  `is_auto_reply` flags. Takes a LIST of ids and batches 20 to a round
+  trip, the same convention as the triage tools, but only reads.
+  `get_message` carries the same curated projection for a single message.
+
+### Notes
+- **No new consent.** `toRecipients`/`ccRecipients`/`internetMessageHeaders`
+  are ordinary message properties under `Mail.Read[.Shared]`; a read-tier
+  server needs nothing more.
+- **Named fields, not a caller-supplied `$select`.** CKM-37 offered both.
+  Named fields won: models own their `$select` here, so a caller-driven
+  projection would make the return shape dynamic, push Graph's own field
+  names into consumer code, and hand an agent a way to request fields
+  (bodies, headers) that these tools deliberately keep off list rows. The
+  addition is additive on a pinned API; `Message.to`/`.cc` keep their
+  names and simply move to the base class.
+- **Measured before deciding against an opt-in flag.** Recipients cost
+  **+141 bytes/row (+17%)** over 100 real inbox rows on each of two
+  tenants (848→988 and 830→970 B/row). That is not enough to justify a
+  flag on every call, so `list_messages` has none; if a caller paging
+  thousands of rows disagrees, that is a new issue with a number attached.
+- **`bcc` stays off listings**: Graph populates it only on the sender's
+  own copy, so it would be an empty column on nearly every row.
+  `get_message` still returns it.
+- **Header values are UNTRUSTED, curated or not.** A forged
+  `List-Unsubscribe` proves only that someone wrote one. They are for
+  classification and prioritisation — never authorisation or trust. The
+  raw values are returned alongside the derived flags precisely so the
+  derivation can be audited and overridden. Values are stripped of
+  control characters (a header must not inject line breaks into a log or
+  a context) and capped at 200 characters with a trailing `…`; live
+  sampling showed only `List-Unsubscribe` ever exceeds that (mean ~330,
+  max 543 chars).
+- Out of scope, per the issues: recipient-based server-side filtering,
+  address-book resolution, full header dumps, DKIM/SPF/DMARC results, and
+  header-based filtering (Graph does not support it).
+
+### Graph facts learned live (the issue's sketch was wrong)
+- **`internetMessageHeaders` IS returned on a collection GET** when
+  explicitly `$select`ed — CKM-38 assumed it was not, and that assumption
+  was the reason it demanded a per-message design. Verified on both
+  tenants: 25/25 rows populated, 47–86 headers each. What makes it
+  unsuitable for `list_messages` is therefore **volume, not N+1**: those
+  rows cost ~10.6–11 KB each, roughly 11× a summary row. So the tool is
+  still deliberate and explicit, but the reason changed, and a caller who
+  wants headers for a whole folder now has a cheaper route available if a
+  future issue wants it.
+- `/$batch` accepts `$select` in sub-request URLs (20 GETs, 20/20 answered).
+- A single-message GET returns the same recipient lists as the collection
+  GET for the widths seen live (up to 7 recipients) — no truncation
+  observed, though `get_message` remains authoritative.
+- Adding `internetMessageHeaders` to `get_message`'s `$select` costs
+  ~9 KB on the wire per call (2.5 KB → 11.9 KB on a small message);
+  curation means only a few hundred bytes reach the caller.
+
+### Verified (live, both delegated tenants)
+- `tests/test_live.py` — **9 passed on each profile**, including the new
+  recipients/headers check (read-only, no residue).
+- Sent Items really answers the correspondent question now: 25/25 rows
+  carried `to`, yielding 11 and 58 distinct correspondents from one call.
+- Alias routing is resolvable: 25 inbox rows carried 12 and 15 DISTINCT
+  delivered-to addresses, and 21/25 and 20/25 rows were addressed to
+  something other than the mailbox's primary address.
+- Headers beat the subject regex they replace: over 25 real inbox
+  messages per tenant, `is_bulk` found 7 and 14, of which a
+  representative subject regex missed 7 and 6 — while producing 5 false
+  positives of its own on one tenant. `is_auto_reply` found 0 and 7.
+- `scripts/live-smoke.py` (both tenants, one with `--triage`) and
+  `scripts/draft-cycle-smoke.py` still pass — the latter matters because
+  `Draft.SELECT` now includes the header property and is used on PATCH.
+- Offline suite: 114 passed (was 101).
+
 ## [2.2.0] — 2026-08-05
 
 The mail **triage** slice, filed from a real triage task that hit every one

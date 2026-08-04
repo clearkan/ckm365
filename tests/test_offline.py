@@ -193,9 +193,11 @@ def test_models_are_first_class_for_pydantic_consumers():
     assert "subject" in schema.get("properties", {})
     msg = Message.from_graph({
         "id": "m1", "subject": "Hi",
-        "from": {"emailAddress": {"name": "A", "address": "a@x.com"}}})
+        "from": {"emailAddress": {"name": "A", "address": "a@x.com"}},
+        "internetMessageHeaders": [{"name": "Precedence", "value": "bulk"}]})
     dumped = adapter.dump_python(msg)
     assert dumped["sender"]["address"] == "a@x.com"
+    assert dumped["headers"]["is_bulk"] is True  # nested dataclass (CKM-38)
     assert adapter.validate_python(dumped) == msg  # round-trip
 
 
@@ -222,22 +224,25 @@ def test_write_tools_gated():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 9  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 20
-    assert len(tools_for(["mail"], write=True, send=True)) == 21
+    assert len(tools_for(["mail"])) == 10  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 21
+    assert len(tools_for(["mail"], write=True, send=True)) == 22
     assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
     assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
     # The triage tools (CKM-33/34/36) are write tier, not send tier: read
     # state, flags and folder are metadata and nothing leaves the tenant.
     assert mail.mark_read not in tools_for(["mail"])
     assert mail.group_by_sender in tools_for(["mail"])  # counting is a read
+    # get_message_headers batches like the triage tools but only READS
+    # (CKM-38), so it belongs in the read tier despite the id-list shape.
+    assert mail.get_message_headers in tools_for(["mail"])
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 25
-    assert len(tools_for(["all"], write=True, send=True)) == 26
+    assert len(tools_for(["all"], write=True)) == 26
+    assert len(tools_for(["all"], write=True, send=True)) == 27
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 29
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 30
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -584,7 +589,8 @@ def test_blessed_api_import_contract():
     from ckm365.graph import Graph, GraphError                     # noqa: F401
     from ckm365.models import (Attachment, Channel, Draft,         # noqa: F401
                                Event, EventSummary, InstalledApp,
-                               MailFolder, Message, MessageSummary, Team)
+                               MailFolder, Message, MessageHeaders,
+                               MessageSummary, Team)
     from ckm365.tools import Ctx, SendDisabled, WriteDisabled      # noqa: F401
     from ckm365.tools.accounts import list_accounts                # noqa: F401
     from ckm365.tools.calendar import (create_event, get_event,    # noqa: F401
@@ -593,7 +599,8 @@ def test_blessed_api_import_contract():
     from ckm365.tools.mail import (add_attachment, complete_flag,  # noqa: F401
                                    create_draft, create_forward_draft,
                                    create_reply_draft, flag,
-                                   get_message, group_by_sender,
+                                   get_message, get_message_headers,
+                                   group_by_sender,
                                    list_attachments, list_mail_folders,
                                    list_messages, mark_read, mark_unread,
                                    move_message, send_draft, unflag,
