@@ -13,7 +13,7 @@ description: |-
 
   Asked: can we export as .eml or .msg, whichever manages better in git?
 
-  Findings that decide the design (measured on intixa inbox, 3 messages):
+  Findings that decide the design (measured on a live inbox, 3 messages):
   - .msg is out: Outlook's proprietary OLE compound format, binary, not
     greppable, no Graph endpoint produces it, and any writer would be a new
     third-party dependency (needs sign-off, and would still not be greppable).

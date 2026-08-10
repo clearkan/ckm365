@@ -97,8 +97,9 @@ history:
     root confinement, kind refusal, no-residue); full live suite green on BOTH
     tenants incl. two new live tests — a draft round trip (bytes identical,
     binary payload) and a real SENT-ITEMS attachment download (the second live
-    hit''s exact case). Largest real downloads exercised: 4.9 MB .pdf (intixa)
-    and 11.9 MB .pptx (axomem). MEASURED: Graph''s attachment `size` counts the
+    hit''s exact case). Largest real downloads exercised: 4.9 MB .pdf and
+    11.9 MB .pptx, one on each tenant. MEASURED: Graph''s attachment `size`
+    counts the
     MIME-encoded form incl. headers, +210-230 B synthetic and up to ~3.8 KB on
     real mail — an upper bound, not the file size (now in AGENTS.md gotchas);
     @odata.type rides along even with a five-field $select. docs/graph-direct.md
