@@ -1,0 +1,79 @@
+id: CKM-32
+title: download_attachment tool — save a message attachment to disk
+column: backlog
+status: backlog
+created_at: '2026-08-03T09:20:00Z'
+updated_at: '2026-08-11T00:00:00Z'
+assignees: []
+description: |-
+  seanwy (2026-08-03): the server can LIST attachment metadata
+  (list_attachments) and ATTACH a local file to a draft (add_attachment),
+  but there is no way to get an attachment OUT of a message. Hit in real
+  use: a counterparty sent a large .xlsx that needed to land in a repo for
+  analysis. Workaround was a throwaway script importing ckm365.auth +
+  ckm365.config to mint a read-only token and call Graph directly — which
+  proves the auth plumbing is right there, the tool is just missing.
+
+  Sketch (read tier — no new consent, Mail.Read/Mail.Read.Shared already
+  cover /messages/{id}/attachments):
+  - download_attachment(message_id, attachment_id | name, dest_path) ->
+    written path + byte count. Never returns content through agent
+    context (same reasoning as CKM-18's streaming note) — the point is to
+    put bytes on disk, not into the transcript.
+  - Mirror add_attachment's containment: honour a root env var so writes
+    are confined to a configured directory. add_attachment reads under
+    CKM365_ATTACH_ROOT; either reuse it or add CKM365_DOWNLOAD_ROOT —
+    decide before implementing, and default to refusing absolute paths
+    outside the root.
+  - Resolve by attachment id (from list_attachments) OR by exact name;
+    ambiguous name -> error listing candidates, never a silent first-match.
+  - fileAttachment only in v1. itemAttachment (an embedded message) and
+    referenceAttachment (a cloud link, no bytes) must be refused with a
+    clear reason rather than writing a broken file.
+  - Size: Graph inlines contentBytes on the attachments collection, which
+    is fine to ~3 MB but wasteful above that. Above the threshold use
+    GET /attachments/{id}/$value and stream to disk in chunks.
+  - Inline attachments (is_inline, e.g. signature images) are downloadable
+    too — do not filter them out, but they are rarely what the caller
+    wants; leave selection to the caller.
+  - Logging stays ids/counts/truncated-ids only. Never log the filename of
+    real mail (it can carry counterparty and project names) — count and
+    truncated id only.
+
+  Out of scope v1: bulk "download all attachments", extracting attachments
+  from calendar events, any parsing/conversion of the downloaded file.
+
+  seanwy (2026-08-11): hit AGAIN in live use, second engagement in a row —
+  raising priority to high. This time on the EngageRocket tech DD: a 2.96 MB
+  .docx meeting transcript ("Fabian Most and Sean Whiteley.docx") attached
+  to a message in SENT ITEMS needed to land in the engagement repo's
+  correspondence/ folder for the evidence record. list_attachments returned
+  the metadata fine; there was no way to get the bytes, so the correspondence
+  record carries metadata-only with a manual "drag it out of Outlook" note.
+  Two additions to the sketch from this hit:
+  - Sent items must work identically to inbox (same Graph path; just confirm
+    folder makes no difference and cover it in tests).
+  - The v1 threshold matters in practice: both real-world hits were ~3 MB,
+    i.e. right at the contentBytes-inlining boundary — implement the
+    /attachments/{id}/$value streaming path in v1, not as a follow-up.
+dependencies: []
+parent_id: null
+priority: high
+issue_type: feature
+tags: [mail, attachments, read-tier]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-03T09:20:00Z'
+  by: claude
+  details: Issue created in column backlog from seanwy's request, after the
+    gap was hit live and worked around with a direct-Graph script
+  event: created
+- at: '2026-08-11T00:00:00Z'
+  by: claude
+  details: Second live hit (EngageRocket DD, 2.96 MB transcript .docx in sent
+    items, needed for the repo evidence record; no workaround run this time).
+    Priority medium -> high; sketch updated (sent-items parity, stream path
+    in v1)
+  event: updated
+version: 2
