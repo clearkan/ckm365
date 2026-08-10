@@ -75,17 +75,18 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 | Server flags | Tools exposed | Delegated scopes requested |
 |---|---|---|
-| *(none)* | reads + `list_accounts` + `download_attachment` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
+| *(none)* | reads + `list_accounts` + `download_attachment` + `export_message` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
 | `--write` | + draft/calendar writes, attachments, triage (read state, flags, move) | `*.ReadWrite[.Shared]` |
 | `--write --enable-send` | + `send_draft`, attendee-bearing event writes, meeting responses | + `Mail.Send[.Shared]` |
 
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
 on top of the base consent from `scripts/create-app-registration.sh`.
 
-`download_attachment` sits in the read tier because it only READS the
-mailbox — but it writes those bytes to the server's local disk, which is
-what `CKM365_DOWNLOAD_ROOT` (falling back to `CKM365_ATTACH_ROOT`) is for:
-set it and downloads are confined to that directory.
+`download_attachment` and `export_message` sit in the read tier because
+they only READ the mailbox — but they write bytes to the server's local
+disk, which is what `CKM365_DOWNLOAD_ROOT` (falling back to
+`CKM365_ATTACH_ROOT`) is for: set it and both are confined to that
+directory.
 
 The `teams` preset (read-only discovery: `list_teams`, `list_channels`,
 `list_installed_apps`) sits **outside** that ladder on its own consent
@@ -94,6 +95,28 @@ the ability to enumerate Teams, and the preset has no write tier at all.
 It is also excluded from `--preset all` on purpose: name it explicitly
 (`--preset mail,calendar,teams`) so it never appears in a session that
 has not consented to it.
+
+## Correspondence in a repo
+
+`export_message` writes one message to a file, and the extension picks the
+format: **`.md`** for a greppable record or **`.eml`** for byte-exact MIME.
+
+The `.md` record is an **[Open Knowledge Format](https://openknowledgeformat.com/)
+v0.1 document** — YAML front matter with OKF's
+`type`/`title`/`description`/`resource`/`tags`/`timestamp`, mail-specific
+extension keys beneath it (from, to, cc, mailbox, message ids, bulk and
+auto-reply flags), the body as plain text, then an attachment manifest
+carrying the ids `download_attachment` needs. It drops into an `okf/` repo
+unmodified, and `tags` carries the facets worth filtering on (`email`,
+`inbound`/`outbound`, `attachments`, `bulk`, `auto-reply`). Re-exporting a
+message is byte-identical, so git shows no diff.
+
+Prefer `.md` for anything agents will search —
+Exchange base64-encodes body parts, so a raw `.eml` often contains none of
+the words in the message (measured: greppable 7/10 for `.eml` vs 10/10 for
+`.md`, at 4–7× the size). `.msg` is not offered: no Graph endpoint
+produces it, it is binary, and writing it would need a third-party
+dependency.
 
 ## Setup
 
@@ -136,7 +159,7 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 31 tools (mail /
+Phases 1–2 complete and live-verified on two tenants: 32 tools (mail /
 calendar / watch / accounts / teams / meetings), three-tier gating, admin
 CLI, live integration suite, the thread-safety contract and supported
 programmatic API (SemVer'd; releases are tagged `vX.Y.Z` for downstream
@@ -147,5 +170,7 @@ mail triage slice — batched read-state/flag/move tools and reliable
 server-side filtering; v2.3.0 puts `to`/`cc` on every listing row and adds
 curated internet headers for bulk/auto-reply detection; v2.4.0 adds
 read-tier `download_attachment` (attachment bytes streamed to disk, never
-into agent context). Security + simplification reviews done. Next:
-SharePoint/Teams file sync (CKM-18).
+into agent context); v2.5.0 adds `export_message` (a message as a
+greppable `.md` record or raw `.eml`) and an opt-in live send-cycle test
+covering the send tier end to end. Security + simplification reviews done.
+Next: SharePoint/Teams file sync (CKM-18).

@@ -3,6 +3,94 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.5.0] — 2026-08-11
+
+Correspondence that agents can actually search, and the first end-to-end
+test of the send tier. 32 tools total.
+
+### Added
+- **`export_message`** (CKM-39, read tier): writes one message to a file,
+  with **the extension choosing the format** — one source of truth, and
+  the caller states intent naturally.
+  - `.md` / `.markdown` / `.txt` — a GREPPABLE record, and an **Open
+    Knowledge Format v0.1 document** (openknowledgeformat.com): YAML front
+    matter carrying OKF's `type`/`title`/`description`/`resource`/`tags`/
+    `timestamp`, then mail-specific extension keys (from, to, cc, mailbox,
+    message ids, bulk and auto-reply flags), the body as PLAIN TEXT, and
+    an attachment manifest carrying each `attachment_id` so
+    `download_attachment` can fetch the bytes. Deterministic — re-exporting
+    the same message produces the same file, so git shows no diff.
+  - `.eml` — the raw MIME exactly as Graph serves it, for an evidence
+    archive.
+- **Live send-cycle test** (CKM-40), `tests/test_live_send_cycle.py`: the
+  send tier end to end — draft + attachment → `send_draft` → poll for
+  delivery → `download_attachment` off the DELIVERED copy and compare
+  bytes → `create_reply_draft(reply_all=True)` → send → poll for the
+  reply. Double-gated (`CKM365_LIVE_ACCOUNT` **and** `CKM365_LIVE_SEND=1`),
+  self-addressed only (asserted before anything is sent), zero residue.
+  The whole cycle runs in ~20s on both tenants.
+
+### Fixed / documented
+- **Three silent Graph subject-filter traps**, all found by the new
+  send-cycle test, all returning zero rows — indistinguishable from "there
+  is no such mail":
+  - `$filter=subject eq '<exact subject>'` never matches, even when the
+    subject is byte-identical. Reproduced on a message the test had just
+    sent and received, where `startswith` and `contains` matched it in the
+    same call sequence.
+  - `contains(subject,'…')` returns nothing once the folder is large: it
+    matched on a small mailbox and never matched in a 93k-message inbox
+    where `startswith` matched immediately.
+  - **Even `startswith(subject,'…')` lags delivery.** A reply delivered at
+    23:22:09 stayed invisible to it for the remaining five minutes of a
+    poll, and the same query found it eleven minutes later. Subject
+    predicates read an index that trails the folder; an unfiltered
+    newest-first listing sees the message at once. This one cost two
+    ten-minute red herrings ("slow tenant") before it was pinned down —
+    the cycle now runs in ~20s on the mailbox that appeared to be slow.
+
+  Consequence, now documented in `list_messages`' docstring, `AGENTS.md`
+  gotchas and `docs/graph-direct.md`: prefer `startswith` for searching,
+  and NEVER poll for just-arrived mail with any subject filter — list
+  newest-first and match client-side, or use the delta-based
+  `list_new_messages` / `wait_for_message`, which see it immediately.
+
+### Notes
+- **`.eml` alone could not do the job, and that is why `.md` exists.**
+  Exchange base64-encodes body parts, so a raw `.eml` frequently contains
+  none of the words in the message. Measured over 10 real messages across
+  both tenants: a distinctive word from each message's own preview was
+  found in the `.eml` 7 times out of 10, and in the `.md` record 10 out of
+  10 — at 4-7x smaller files (1.8-40 KB vs 8.6-289 KB). A repo of base64
+  defeats the point of keeping correspondence beside the work.
+- **OKF by default, not behind a flag.** OKF permits extension keys, so
+  one format can be both an OKF document and a full mail record — a flag
+  would buy two code paths and two things to test for no gain. Where OKF
+  has a name for something (`title`, `timestamp`, `resource`), OKF's name
+  is used and nothing is written twice. The direction tag is OMITTED when
+  Graph has no sender (an unsent draft): calling that "inbound" would be a
+  lie in the one field an index groups on.
+- **No `.msg`.** Outlook's format is proprietary OLE compound binary, no
+  Graph endpoint produces it, it is not greppable, and writing it would
+  need a third-party dependency — three strikes against, one of which is
+  a hard rule here.
+- **Graph does the HTML→text conversion**, via the `Prefer:
+  outlook.body-content-type="text"` header `get_message` already uses. No
+  local HTML stripping, no new dependency, and the text matches what
+  Outlook itself would show.
+- **Attachment bytes are never written by an export.** The record names
+  them and carries their ids; `download_attachment` fetches them
+  deliberately. A `.eml` embeds them because MIME does.
+- **Front matter is quoted defensively**: a subject full of colons,
+  quotes or newlines cannot break the YAML or inject a second `subject:`
+  key — control characters are stripped and scalars are escaped.
+- **`tests/test_live.py` keeps its "never sends" invariant** — the send
+  cycle lives in its own file behind its own env gate, so the default live
+  suite is still safe to run anywhere.
+- Out of scope, per the issues: bulk/threaded export, downloading
+  attachments as a side effect of an export, and sending to any third
+  party from a test.
+
 ## [2.4.0] — 2026-08-11
 
 The gap that got hit twice in live engagements (CKM-32): the server could
