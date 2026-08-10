@@ -75,12 +75,17 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 | Server flags | Tools exposed | Delegated scopes requested |
 |---|---|---|
-| *(none)* | reads + `list_accounts` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
+| *(none)* | reads + `list_accounts` + `download_attachment` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
 | `--write` | + draft/calendar writes, attachments, triage (read state, flags, move) | `*.ReadWrite[.Shared]` |
 | `--write --enable-send` | + `send_draft`, attendee-bearing event writes, meeting responses | + `Mail.Send[.Shared]` |
 
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
 on top of the base consent from `scripts/create-app-registration.sh`.
+
+`download_attachment` sits in the read tier because it only READS the
+mailbox — but it writes those bytes to the server's local disk, which is
+what `CKM365_DOWNLOAD_ROOT` (falling back to `CKM365_ATTACH_ROOT`) is for:
+set it and downloads are confined to that directory.
 
 The `teams` preset (read-only discovery: `list_teams`, `list_channels`,
 `list_installed_apps`) sits **outside** that ladder on its own consent
@@ -131,7 +136,7 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 30 tools (mail /
+Phases 1–2 complete and live-verified on two tenants: 31 tools (mail /
 calendar / watch / accounts / teams / meetings), three-tier gating, admin
 CLI, live integration suite, the thread-safety contract and supported
 programmatic API (SemVer'd; releases are tagged `vX.Y.Z` for downstream
@@ -140,5 +145,7 @@ the out-of-scope 403 negative test). v2.0.0 slims the core to two deps with
 dataclass models; v2.1.0 adds read-only Teams discovery; v2.2.0 adds the
 mail triage slice — batched read-state/flag/move tools and reliable
 server-side filtering; v2.3.0 puts `to`/`cc` on every listing row and adds
-curated internet headers for bulk/auto-reply detection. Security +
-simplification reviews done. Next: SharePoint/Teams file sync (CKM-18).
+curated internet headers for bulk/auto-reply detection; v2.4.0 adds
+read-tier `download_attachment` (attachment bytes streamed to disk, never
+into agent context). Security + simplification reviews done. Next:
+SharePoint/Teams file sync (CKM-18).

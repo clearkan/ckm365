@@ -3,6 +3,73 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.4.0] — 2026-08-11
+
+The gap that got hit twice in live engagements (CKM-32): the server could
+LIST attachment metadata and ATTACH a local file to a draft, but there was
+no way to get an attachment OUT of a message. Both hits were ~3 MB
+documents — a counterparty .xlsx for analysis, then a 2.96 MB .docx
+meeting transcript in SENT ITEMS that had to land in an engagement repo —
+and both were worked around with a throwaway script. 31 tools total.
+
+### Added
+- **`download_attachment`** (CKM-32, read tier): saves one attachment of a
+  message to a file on the server's disk. The bytes stream from Graph's
+  `/attachments/{id}/$value` straight to the file and NEVER pass through
+  agent context — the point is to put a document in a repo, not a
+  base64 blob in a transcript. Select by `attachment_id` or by exact
+  `name`; a shared name is an error listing the candidate ids, never a
+  silent first match. `dest_path` may be a file path or an existing
+  directory (the attachment names itself, separators stripped).
+- **`Graph.download(path, dest)`**: the streaming binary path, with the
+  same auth, error and retry policy as every other call. `content()` is
+  text-only and would corrupt a .docx — that trap is now closed.
+- **`Attachment.kind`**: Graph's `@odata.type` minus the
+  `#microsoft.graph.` prefix, so `list_attachments` says which
+  attachments are downloadable at all.
+- **`docs/graph-direct.md` rewritten** as the escape-hatch guide for
+  endpoints with no tool: how to get credentials without minting a token
+  (`Ctx.create` → `ctx.target`), recipes for JSON / batch / raw bytes,
+  how to read a 403, and a per-resource index into Microsoft's API
+  reference plus Graph Explorer. `list_accounts`' description and
+  `graph.py` now point at it, so both an MCP-only agent and someone
+  reading the code land in the same place.
+
+### Notes
+- **No new consent.** `Mail.Read[.Shared]` already covers
+  `/messages/{id}/attachments` — a read-tier server can do this today.
+- **Read tier, despite writing bytes.** The tier ladder gates what
+  happens in the TENANT; this only reads there. The local write is
+  confined by `CKM365_DOWNLOAD_ROOT`, falling back to
+  `CKM365_ATTACH_ROOT` so an operator who fenced the read side gets the
+  write side fenced by the same setting.
+- **One code path, not two.** The sketch proposed inline `contentBytes`
+  below ~3 MB and `$value` streaming above it. Streaming always is
+  simpler, has no threshold to get wrong, and never buffers a file in
+  memory; both real-world hits sat exactly on the boundary that a
+  threshold would have introduced. Live-verified on 4.9 MB and 11.9 MB
+  attachments.
+- **Sent items behave identically** — verified on both tenants.
+  Attachments hang off the message id, so no folder appears in the URL at
+  all; that is now an offline assertion as well as a live test.
+- **Attachment `size` is not the file size** (measured, both tenants): it
+  counts the MIME-encoded attachment including headers, running +210-230 B
+  on synthetic files and up to ~3.8 KB on real mail. Treat it as an upper
+  bound; the tool reports what actually landed.
+- **`@odata.type` survives `$select`** — it is OData control information,
+  not a property, so a five-field listing still says whether each
+  attachment is a fileAttachment. That makes refusing an itemAttachment
+  (an embedded message) or referenceAttachment (a cloud link, no bytes in
+  the mailbox) cheap, with a reason instead of a broken file.
+- **Safety defaults**: never overwrites an existing file; a failure
+  part-way leaves no residue (bytes land in a `.part` file that is
+  renamed only on success); attachment-derived filenames are reduced to a
+  bare name (both separator kinds, control characters stripped) before
+  the root check; the log line carries ids, counts and byte totals only —
+  never the filename, which can name a counterparty and a project.
+- Out of scope, per the issue: bulk "download all attachments",
+  attachments on calendar events, and any parsing of what was downloaded.
+
 ## [2.3.0] — 2026-08-05
 
 Two gaps a downstream consumer hit on the same triage design (CKM-37/38):

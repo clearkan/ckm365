@@ -1,5 +1,11 @@
 """Thin Microsoft Graph REST client: one httpx.Client, retry, paging, errors.
 
+Calling an endpoint no tool covers? Use this class rather than raw httpx —
+`docs/graph-direct.md` is the sanctioned recipe (credentials, tier rules,
+and where Microsoft's API reference lives). Endpoint reference:
+learn.microsoft.com/graph/api/overview; try the URL in Graph Explorer
+(developer.microsoft.com/graph/graph-explorer) before scripting it.
+
 Retry policy (from the Softeria reference study, docs/reference-notes.md):
 429 retries on any method honouring Retry-After (Graph throttles before
 executing, so the side effect never landed); 503/504/transport errors retry
@@ -20,6 +26,7 @@ import random
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -101,8 +108,54 @@ class Graph:
     def content(self, path: str, *, params: Mapping[str, str] | None = None,
                 headers: Mapping[str, str] | None = None) -> str:
         """GET a resource whose body is NOT JSON (meeting transcripts come
-        back as VTT text). Same auth and retry policy as request()."""
+        back as VTT text). Same auth and retry policy as request().
+
+        TEXT ONLY — this decodes to str. Binary bodies (attachment $value,
+        message MIME, drive item content) go through download(), which
+        streams bytes and never decodes them.
+        """
         return self._send("GET", path, params=params, headers=headers).text
+
+    def download(self, path: str, dest: Path, *,
+                 params: Mapping[str, str] | None = None,
+                 headers: Mapping[str, str] | None = None) -> int:
+        """Stream a BINARY body straight to `dest`, returning bytes written.
+
+        The whole point is that the bytes never sit in memory (or in an
+        agent's context): Graph's $value endpoints serve files of arbitrary
+        size and content() would both buffer and mangle them.
+
+        GET only, so the idempotent retry policy applies — and since Graph
+        offers no ranged reads here, a retry restarts the file from byte
+        zero (the open() truncates). Errors are raised, not written: `dest`
+        is created only once a response is a success.
+        """
+        attempt = 0
+        while True:
+            hdrs = {"Authorization": f"Bearer {self.auth.token()}",
+                    **(headers or {})}
+            try:
+                with self._client.stream("GET", path, params=params,
+                                         headers=hdrs) as resp:
+                    if resp.is_success:
+                        written = 0
+                        with dest.open("wb") as out:
+                            for chunk in resp.iter_bytes():
+                                out.write(chunk)
+                                written += len(chunk)
+                        return written
+                    resp.read()  # error bodies are small; _error needs one
+                    transient = resp.status_code in (503, 504)
+                    budget = _MAX_TRANSIENT_RETRIES if transient else _MAX_RETRIES
+                    if (resp.status_code != 429 and not transient) \
+                            or attempt >= budget:
+                        raise self._error(resp)
+                    self._pause(resp, attempt, budget, transient)
+            except httpx.TransportError:
+                if attempt >= _MAX_RETRIES:
+                    raise
+                self._pause(None, attempt, _MAX_RETRIES, False)
+            attempt += 1
 
     def _send(self, method: str, path: str, *,
               params: Mapping[str, str] | None = None,
@@ -130,16 +183,24 @@ class Graph:
                     raise self._error(resp)
                 if attempt >= budget:
                     raise self._error(resp)
-            delay = _retry_after(resp.headers.get("retry-after")) \
-                if resp is not None and resp.status_code == 429 else None
-            if delay is None:
-                base = _TRANSIENT_BACKOFF if transient else _BASE_BACKOFF
-                delay = random.uniform(0, min(_MAX_BACKOFF, base * 2 ** attempt))
-            log.warning("graph retry %d/%d after %s (sleep %.1fs)", attempt + 1,
-                        budget, resp.status_code if resp else "transport error",
-                        delay)
-            time.sleep(delay)
+            self._pause(resp, attempt, budget, transient)
             attempt += 1
+
+    @staticmethod
+    def _pause(resp: httpx.Response | None, attempt: int, budget: int,
+               transient: bool) -> None:
+        """Sleep before one retry: Graph's Retry-After when it sent one,
+        else jittered exponential backoff (longer base for transient 5xx).
+        Shared by _send and download so both obey one policy."""
+        delay = _retry_after(resp.headers.get("retry-after")) \
+            if resp is not None and resp.status_code == 429 else None
+        if delay is None:
+            base = _TRANSIENT_BACKOFF if transient else _BASE_BACKOFF
+            delay = random.uniform(0, min(_MAX_BACKOFF, base * 2 ** attempt))
+        log.warning("graph retry %d/%d after %s (sleep %.1fs)", attempt + 1,
+                    budget, resp.status_code if resp else "transport error",
+                    delay)
+        time.sleep(delay)
 
     def get(self, path: str, **kw: Any) -> dict[str, Any]:
         return self.request("GET", path, **kw) or {}

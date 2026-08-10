@@ -1,9 +1,9 @@
 id: CKM-32
 title: download_attachment tool — save a message attachment to disk
-column: backlog
-status: backlog
+column: done
+status: done
 created_at: '2026-08-03T09:20:00Z'
-updated_at: '2026-08-11T00:30:00Z'
+updated_at: '2026-08-11T10:05:00Z'
 assignees: []
 description: |-
   seanwy (2026-08-03): the server can LIST attachment metadata
@@ -80,4 +80,29 @@ history:
     Priority medium -> high; sketch updated (sent-items parity, stream path
     in v1)
   event: updated
-version: 2
+- at: '2026-08-11T09:10:00Z'
+  by: claude
+  details: Moved backlog -> doing; implementation started
+  event: moved
+- at: '2026-08-11T10:05:00Z'
+  by: claude
+  details: 'Shipped in v2.4.0. download_attachment (read tier) + Graph.download()
+    streaming binary path + Attachment.kind from @odata.type. DECISIONS: (1) ONE
+    code path, always $value streaming — the sketch''s inline-contentBytes/threshold
+    split buys nothing and both real hits sat on the boundary; (2) CKM365_DOWNLOAD_ROOT
+    confines writes, falling back to CKM365_ATTACH_ROOT so an operator who fenced
+    the read side gets the write side fenced too; (3) never overwrites, and a
+    failure part-way leaves no residue (.part renamed on success only).
+    VERIFIED: offline suite 125 passed (11 new tests incl. traversal-y names,
+    root confinement, kind refusal, no-residue); full live suite green on BOTH
+    tenants incl. two new live tests — a draft round trip (bytes identical,
+    binary payload) and a real SENT-ITEMS attachment download (the second live
+    hit''s exact case). Largest real downloads exercised: 4.9 MB .pdf (intixa)
+    and 11.9 MB .pptx (axomem). MEASURED: Graph''s attachment `size` counts the
+    MIME-encoded form incl. headers, +210-230 B synthetic and up to ~3.8 KB on
+    real mail — an upper bound, not the file size (now in AGENTS.md gotchas);
+    @odata.type rides along even with a five-field $select. docs/graph-direct.md
+    rewritten as the escape-hatch guide and pointed at from list_accounts and
+    graph.py.'
+  event: completed
+version: 4

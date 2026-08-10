@@ -122,6 +122,17 @@ breaking change — `tests/test_offline.py` carries the import contract.
   anyway on VOLUME grounds: ~10.6-11 KB per row, ~11x a summary row.
   `get_message_headers` fetches it deliberately, 20 messages per `/$batch`,
   and curates before returning. `/$batch` sub-request URLs accept `$select`.
+- Attachment `@odata.type` (`kind` on the model) rides along on a listing
+  even when `$select` names five other fields — it is OData control
+  information, not a property, so it cannot be selected and cannot be
+  suppressed. That is what makes refusing item/referenceAttachment cheap.
+- Attachment `size` is NOT the file size: it counts the MIME-encoded
+  attachment including headers, measured +210-230 B on synthetic files and
+  up to ~3.8 KB on real mail (both tenants). Use it as an upper bound;
+  `download_attachment` reports what actually landed.
+- `Graph.content()` decodes to `str` (built for VTT transcripts) and will
+  corrupt any binary. `Graph.download()` is the streaming byte path — it
+  writes to a file and never buffers the body.
 - Teams endpoints REJECT `$top` (400 "Query option 'Top' is not
   allowed"): `/me/joinedTeams`, `/teams/{id}/channels`,
   `/teams/{id}/installedApps` all refuse it — only the `/teams`
@@ -129,11 +140,16 @@ breaking change — `tests/test_offline.py` carries the import contract.
   client-side via `pull()`; `$select`/`$expand` are fine. Offline mocks
   accept anything, so this only showed up live (it did, on first run).
 
-## Current state (2026-08-05)
+## Current state (2026-08-11)
 
-Version 2.3.0. Phases 1-2 done and live-verified on both tenants: 30 tools
+Version 2.4.0. Phases 1-2 done and live-verified on both tenants: 31 tools
 (mail/calendar/watch/accounts/teams/meetings), three-tier gating, admin CLI,
-multi-user onboarding, event-driven wake pattern. v2.3.0 put `to`/`cc` on
+multi-user onboarding, event-driven wake pattern. v2.4.0 added read-tier
+`download_attachment` (CKM-32 — attachment bytes stream from Graph's
+`$value` straight to disk via the new `Graph.download()`, never through
+agent context; confined by `CKM365_DOWNLOAD_ROOT`) and rewrote
+`docs/graph-direct.md` as the escape-hatch guide for endpoints with no
+tool. v2.3.0 put `to`/`cc` on
 every `MessageSummary` (CKM-37 — sent-items correspondents, and which party
 a message belongs to in a shared mailbox; measured cost +17% per row, so no
 opt-in flag) and added read-tier `get_message_headers` (CKM-38 — a curated,
@@ -154,7 +170,9 @@ disconnected pydantic entirely — models are stdlib dataclasses
 (pydantic-compatible via TypeAdapter, test-pinned), core deps are exactly
 httpx/msal; v2.1.0 added the teams discovery preset (CKM-25 — the option
 (c) slice: read-only, org-scoped, SEPARATE consent tier). Teams bot
-messaging stays out of this repo by decision (CKM-24). Board: the only
-open item is CKM-18 (SharePoint/Teams-site file sync). Security +
+messaging stays out of this repo by decision (CKM-24). Board: CKM-18
+(SharePoint/Teams-site file sync), CKM-28 (Teams persona options) and
+CKM-31 (client-tenant onboarding) are open in backlog; CKM-30 (meeting
+transcripts) is code-complete in doing, blocked on a tenant switch. Security +
 simplification reviews completed; decisions on deliberately-kept
 complexity are recorded in the CKM-14 board history.
