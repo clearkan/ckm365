@@ -3,7 +3,7 @@ title: download_attachment tool — save a message attachment to disk
 column: backlog
 status: backlog
 created_at: '2026-08-03T09:20:00Z'
-updated_at: '2026-08-11T00:00:00Z'
+updated_at: '2026-08-11T00:30:00Z'
 assignees: []
 description: |-
   seanwy (2026-08-03): the server can LIST attachment metadata
@@ -53,6 +53,10 @@ description: |-
   Two additions to the sketch from this hit:
   - Sent items must work identically to inbox (same Graph path; just confirm
     folder makes no difference and cover it in tests).
+  - Interim: the direct-Graph workaround is now DOCUMENTED at
+    docs/graph-direct.md (Recipe 2 is exactly this case) — no more
+    reinventing the throwaway script. The doc notes Graph.content() is
+    text-only and must not be used for binaries.
   - The v1 threshold matters in practice: both real-world hits were ~3 MB,
     i.e. right at the contentBytes-inlining boundary — implement the
     /attachments/{id}/$value streaming path in v1, not as a follow-up.

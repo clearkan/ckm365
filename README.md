@@ -38,6 +38,9 @@ test in `tests/test_offline.py` fails loudly on drift):
 Everything else (`auth.py` internals, `server.py`, underscore-prefixed
 helpers) may change in any release. Worked example:
 `docs/usage-modes.md` → "Programmatic use (no MCP, no agent)".
+For a Graph endpoint the tools don't cover yet, **`docs/graph-direct.md`**
+is the sanctioned escape hatch — reuse the server's auth/retry plumbing,
+keep the tier rules, file the gap on the board.
 
 Installing as a dependency: `ckm365 @ git+<repo-url>@vX.Y.Z` pulls only
 the core (`httpx`/`msal` — nothing else, not even pydantic); add the
