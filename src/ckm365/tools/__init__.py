@@ -14,7 +14,8 @@ ALWAYS = [accounts.list_accounts]  # registered with every preset
 READ = {
     "mail": [mail.list_messages, mail.get_message, mail.get_message_headers,
              mail.list_mail_folders,
-             mail.list_attachments, mail.group_by_sender,
+             mail.list_attachments, mail.download_attachment,
+             mail.group_by_sender,
              watch.list_new_messages, watch.wait_for_message,
              watch.get_watch_command],
     "calendar": [calendar.list_events, calendar.get_event],

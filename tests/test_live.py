@@ -82,6 +82,70 @@ def test_draft_cycle_reply_patch_attach_update_delete(ctx):
     assert err.value.status == 404  # residue check
 
 
+def test_download_attachment_round_trip(ctx):
+    """CKM-32 against real Graph: the bytes off /$value must be exactly
+    what went in — binary, not text — and Graph's reported `size` counts
+    the MIME-encoded form, so it over-reports what lands on disk. Zero
+    residue: the draft is deleted and the files live in a temp dir."""
+    payload = bytes(range(256)) * 8  # deliberately not valid utf-8
+    _, mb = ctx.target(None, MAILBOX)
+    draft = mail.create_draft(ctx, to=[mb], subject="ckm365 live download",
+                              body_html="<p>ckm365 live suite</p>",
+                              mailbox=MAILBOX)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "ckm365-live-download.bin"
+            sample.write_bytes(payload)
+            added = mail.add_attachment(ctx, draft.id, str(sample),
+                                        mailbox=MAILBOX)
+            assert added.kind == "fileAttachment"  # rides along with $select
+
+            out = Path(tmp) / "out.bin"
+            res = mail.download_attachment(ctx, draft.id, str(out),
+                                           attachment_id=added.id,
+                                           mailbox=MAILBOX)
+            assert out.read_bytes() == payload
+            assert res["bytes"] == len(payload) <= added.size
+
+            # by exact name, into a DIRECTORY: the attachment names itself
+            into = Path(tmp) / "into"
+            into.mkdir()
+            by_name = mail.download_attachment(ctx, draft.id, str(into),
+                                               name=sample.name,
+                                               mailbox=MAILBOX)
+            assert Path(by_name["path"]) == into / sample.name
+            assert Path(by_name["path"]).read_bytes() == payload
+            with pytest.raises(ValueError, match="overwrite"):
+                mail.download_attachment(ctx, draft.id, str(out),
+                                         attachment_id=added.id,
+                                         mailbox=MAILBOX)
+    finally:
+        _delete(ctx, "messages", draft.id)
+
+
+def test_download_attachment_from_sent_items(ctx):
+    """The second live hit was a .docx in SENT ITEMS: attachments hang off
+    the message id, so the folder must make no difference. Read-only, into
+    a temp dir; nothing about the file is asserted beyond its size."""
+    sent = mail.list_messages(ctx, folder="sentitems", top=10,
+                              filter="hasAttachments eq true", mailbox=MAILBOX)
+    for message in sent:
+        files = [a for a in mail.list_attachments(ctx, message.id,
+                                                  mailbox=MAILBOX)
+                 if a.kind == "fileAttachment"]
+        if not files:
+            continue
+        with tempfile.TemporaryDirectory() as tmp:
+            res = mail.download_attachment(ctx, message.id, tmp,
+                                           attachment_id=files[0].id,
+                                           mailbox=MAILBOX)
+            written = Path(res["path"])
+            assert written.stat().st_size == res["bytes"] > 0
+            assert res["bytes"] <= files[0].size  # MIME-encoded size is bigger
+        return
+    pytest.skip("sent items has no message carrying a file attachment")
+
+
 def test_delivered_messages_are_untouchable(ctx):
     newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
     if not newest:

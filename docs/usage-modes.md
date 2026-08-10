@@ -243,6 +243,7 @@ Notes:
 | Var | Purpose |
 |---|---|
 | `CKM365_PROFILES` | Alternate path to profiles.toml |
-| `CKM365_ATTACH_ROOT` | Restrict `add_attachment` reads to this directory |
+| `CKM365_ATTACH_ROOT` | Restrict `add_attachment` reads to this directory (and downloads, if `CKM365_DOWNLOAD_ROOT` is unset) |
+| `CKM365_DOWNLOAD_ROOT` | Restrict `download_attachment` writes to this directory |
 | `CKM365_<PROFILE>_CLIENT_SECRET` | App-only secret (mode 3) |
 | `CKM365_<PROFILE>_CLIENT_CERT_PATH` / `_CLIENT_CERT_THUMBPRINT` | App-only certificate (mode 3, preferred) |

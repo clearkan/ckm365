@@ -184,19 +184,37 @@ Draft = Message
 
 @dataclass
 class Attachment:
+    """One attachment's metadata — never its content.
+
+    `kind` is Graph's polymorphic @odata.type with the
+    "#microsoft.graph." prefix stripped: fileAttachment (real bytes,
+    the only downloadable kind), itemAttachment (an embedded message or
+    event) or referenceAttachment (a link to cloud storage). It is
+    OData control information rather than a property, so it cannot be
+    $select'ed — it rides along regardless, verified live on a listing
+    that selects five fields (CKM-32).
+
+    `size` is Graph's number and counts the MIME-encoded attachment
+    INCLUDING its headers, so it always exceeds the bytes
+    download_attachment writes — by 210-230 B on synthetic files and up
+    to ~3.8 KB on real mail (measured on two tenants). It is an upper
+    bound on the file size, not the file size.
+    """
     SELECT: ClassVar[str] = "id,name,contentType,size,isInline"
     id: str
     name: str = ""
     content_type: str | None = None
     size: int = 0
     is_inline: bool = False
+    kind: str = ""
 
     @classmethod
     def from_graph(cls, d: dict[str, Any]) -> "Attachment":
         return cls(id=d["id"], name=d.get("name") or "",
                    content_type=d.get("contentType"),
                    size=int(d.get("size") or 0),
-                   is_inline=bool(d.get("isInline")))
+                   is_inline=bool(d.get("isInline")),
+                   kind=str(d.get("@odata.type") or "").rpartition(".")[2])
 
 
 @dataclass

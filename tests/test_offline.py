@@ -224,9 +224,9 @@ def test_write_tools_gated():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 10  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 21
-    assert len(tools_for(["mail"], write=True, send=True)) == 22
+    assert len(tools_for(["mail"])) == 11  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 22
+    assert len(tools_for(["mail"], write=True, send=True)) == 23
     assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
     assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
     # The triage tools (CKM-33/34/36) are write tier, not send tier: read
@@ -236,13 +236,16 @@ def test_tools_for_presets():
     # get_message_headers batches like the triage tools but only READS
     # (CKM-38), so it belongs in the read tier despite the id-list shape.
     assert mail.get_message_headers in tools_for(["mail"])
+    # download_attachment (CKM-32) is read tier for the same reason: it
+    # reads the mailbox, and the bytes it writes go to LOCAL disk.
+    assert mail.download_attachment in tools_for(["mail"])
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 26
-    assert len(tools_for(["all"], write=True, send=True)) == 27
+    assert len(tools_for(["all"], write=True)) == 27
+    assert len(tools_for(["all"], write=True, send=True)) == 28
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 30
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 31
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -598,8 +601,8 @@ def test_blessed_api_import_contract():
                                        update_event)
     from ckm365.tools.mail import (add_attachment, complete_flag,  # noqa: F401
                                    create_draft, create_forward_draft,
-                                   create_reply_draft, flag,
-                                   get_message, get_message_headers,
+                                   create_reply_draft, download_attachment,
+                                   flag, get_message, get_message_headers,
                                    group_by_sender,
                                    list_attachments, list_mail_folders,
                                    list_messages, mark_read, mark_unread,

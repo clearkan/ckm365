@@ -309,12 +309,158 @@ def list_mail_folders(ctx: Ctx, *, account: str | None = None,
     return pull(g, MailFolder, _path(mb, "mailFolders"), params=params, top=200)
 
 
-def list_attachments(ctx: Ctx, message_id: str, *, account: str | None = None,
-                     mailbox: str | None = None) -> list[Attachment]:
-    """List a message's attachment metadata (name, type, size — never content)."""
-    g, mb = ctx.target(account, mailbox)
+def _attachments(g: Graph, mb: str, message_id: str) -> list[Attachment]:
     return pull(g, Attachment, _message_path(mb, message_id, "/attachments"),
                 params={"$select": Attachment.SELECT}, top=100)
+
+
+def list_attachments(ctx: Ctx, message_id: str, *, account: str | None = None,
+                     mailbox: str | None = None) -> list[Attachment]:
+    """List a message's attachment metadata (name, type, size — never content).
+
+    `kind` says what each one actually is: fileAttachment (a real file —
+    the only kind download_attachment can save), itemAttachment (an
+    embedded message or event) or referenceAttachment (a link to cloud
+    storage, no bytes in the mailbox). `size` counts the MIME-encoded
+    attachment including its headers, so it slightly EXCEEDS the file
+    itself (a few hundred bytes to a few KB) — an upper bound, not the
+    file size.
+    """
+    g, mb = ctx.target(account, mailbox)
+    return _attachments(g, mb, message_id)
+
+
+def _safe_name(name: str) -> str:
+    """An attachment's own name reduced to a bare filename.
+
+    Attachment names are chosen by whoever sent the mail: separators (both
+    kinds — a Windows sender's name reaches us verbatim) and control
+    characters go, and '', '.', '..' fall back to a fixed name. Containment
+    is enforced by the root check below as well; this only keeps a derived
+    filename sane.
+    """
+    base = Path((name or "").replace("\\", "/")).name
+    base = "".join(c for c in base if ord(c) >= 32 and ord(c) != 127).strip()
+    return base if base not in ("", ".", "..") else "attachment"
+
+
+def _download_target(dest_path: str, attachment_name: str) -> Path:
+    """Resolve where the bytes may land, or refuse with the reason.
+
+    Mirrors add_attachment's containment in the opposite direction:
+    CKM365_DOWNLOAD_ROOT confines writes, falling back to
+    CKM365_ATTACH_ROOT so an operator who already fenced the read side
+    gets the write side fenced by the same setting.
+    """
+    if not (dest_path or "").strip():
+        raise ValueError("dest_path is required")
+    dest = Path(dest_path).expanduser()
+    if dest.is_dir():
+        dest = dest / _safe_name(attachment_name)
+    dest = dest.resolve()
+    root = os.environ.get("CKM365_DOWNLOAD_ROOT") or \
+        os.environ.get("CKM365_ATTACH_ROOT")
+    if root and not dest.is_relative_to(Path(root).expanduser().resolve()):
+        raise ValueError(f"destination is outside the download root ({root}); "
+                         "refusing to write there")
+    if dest.exists():
+        raise ValueError(f"refusing to overwrite an existing file: {dest}")
+    if not dest.parent.is_dir():
+        raise ValueError(f"destination directory does not exist: {dest.parent}")
+    return dest
+
+
+def _select_attachment(items: list[Attachment], attachment_id: str | None,
+                       name: str | None) -> Attachment:
+    """Pick exactly one attachment, or raise saying why none was picked."""
+    if attachment_id:
+        matches = [a for a in items if a.id == attachment_id]
+        if not matches:
+            raise ValueError(
+                f"no attachment with that id on this message ({len(items)} "
+                "attachment(s) present) — ids change when a message moves, "
+                "so re-read them with list_attachments")
+    else:
+        matches = [a for a in items if a.name == name]
+        if not matches:
+            raise ValueError(
+                f"no attachment with that exact name ({len(items)} "
+                "attachment(s) present) — names must match exactly; "
+                "list_attachments shows them")
+        if len(matches) > 1:
+            # Never a silent first-match: hand back the discriminators
+            # (ids, sizes) rather than the name they all share.
+            candidates = ", ".join(f"{a.id[:24]}… ({a.size} B)" for a in matches)
+            raise ValueError(
+                f"{len(matches)} attachments on this message share that name — "
+                f"pass attachment_id instead: {candidates}")
+    found = matches[0]
+    if found.kind and found.kind != "fileAttachment":
+        raise ValueError(
+            f"this attachment is a {found.kind}, which has no file bytes to "
+            "save: an itemAttachment is a message or event embedded in the "
+            "mail (read it with get_message), and a referenceAttachment is a "
+            "link to cloud storage (the file lives in OneDrive/SharePoint, "
+            "not in the mailbox). Only fileAttachment can be downloaded.")
+    return found
+
+
+def download_attachment(ctx: Ctx, message_id: str, dest_path: str, *,
+                        attachment_id: str | None = None,
+                        name: str | None = None, account: str | None = None,
+                        mailbox: str | None = None) -> dict:
+    """Save one attachment of a message to a file on the server's disk.
+
+    THE BYTES NEVER ENTER YOUR CONTEXT — they stream from Graph straight
+    to disk, so this works for a 30 MB PDF as well as a 3 KB one. Read the
+    result with ordinary file tools afterwards (that is the point: a .docx
+    or .xlsx has to land in a repo or a working directory to be useful).
+
+    Choose the attachment with attachment_id (from list_attachments —
+    always unambiguous) or with `name`, which must match EXACTLY. Two
+    attachments sharing a name is an error listing their ids, never a
+    silent first match. Only a fileAttachment has bytes; an itemAttachment
+    (embedded message) or referenceAttachment (a cloud link) is refused
+    with the reason rather than written as a broken file.
+
+    dest_path is either a full file path, or an EXISTING DIRECTORY, in
+    which case the attachment's own name is used (path separators
+    stripped). An existing file is never overwritten — pick another path.
+    The download is atomic: a failure part-way leaves nothing behind.
+    If CKM365_DOWNLOAD_ROOT (or, failing that, CKM365_ATTACH_ROOT) is set,
+    only paths under that directory can be written.
+
+    Read tier — this reads the mailbox and needs no --write; the write it
+    does is to LOCAL disk, which is what the roots above are for. Any
+    folder works, sentitems included: attachments hang off the message id,
+    not the folder. Inline attachments (signature images) download the
+    same way; list_attachments' is_inline flags them.
+
+    Returns {"path", "bytes", "name", "content_type", "attachment_id"}.
+    "bytes" is what was actually written, always slightly less than the
+    `size` list_attachments reports (that one includes MIME headers).
+    """
+    if not (attachment_id or name):
+        raise ValueError("pass attachment_id (from list_attachments) or name")
+    g, mb = ctx.target(account, mailbox)
+    found = _select_attachment(_attachments(g, mb, message_id),
+                               attachment_id, name)
+    dest = _download_target(dest_path, found.name)
+    part = dest.with_name(dest.name + ".part")
+    try:
+        written = g.download(_message_path(
+            mb, message_id,
+            f"/attachments/{_seg(found.id, 'attachment_id')}/$value"), part)
+        part.replace(dest)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    # ids, counts and byte totals only — an attachment's NAME can carry the
+    # counterparty and project it came from, so it stays out of the log.
+    log.info("tool=download_attachment mailbox=%r message_id=%r "
+             "attachment_id=%r bytes=%d", mb, message_id, found.id[:24], written)
+    return {"path": str(dest), "bytes": written, "name": found.name,
+            "content_type": found.content_type, "attachment_id": found.id}
 
 
 def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
