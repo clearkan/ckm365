@@ -16,6 +16,8 @@ session; everything else worth knowing is one hop from here.
    sketch, dependencies, and history — treat it as the brief.
 4. `README.md` + `docs/usage-modes.md` — capability tiers and how the two
    real deployments run. `docs/onboarding.md` for the new-user path.
+   `docs/graph-direct.md` — the sanctioned way to call Graph directly for
+   endpoints with no tool yet (and where Microsoft's API docs live).
 5. `CHANGELOG.md` — what shipped when, including hard-won Graph facts.
 
 ## The working loop (what "done" means here)
