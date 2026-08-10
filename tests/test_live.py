@@ -146,6 +146,54 @@ def test_download_attachment_from_sent_items(ctx):
     pytest.skip("sent items has no message carrying a file attachment")
 
 
+def test_export_message_both_formats(ctx):
+    """CKM-39 against real Graph, on a message this test creates (so the
+    assertions can look at content without touching real mail). The claim
+    being tested is the one that motivated the format: the .md record is
+    GREPPABLE, where the raw .eml is not guaranteed to be."""
+    _, mb = ctx.target(None, MAILBOX)
+    token = "ckm365-export-marker-zqx"
+    draft = mail.create_draft(ctx, to=[mb], subject="ckm365 live export",
+                              body_html=f"<p>{token}</p><p>second line</p>",
+                              mailbox=MAILBOX)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            record = Path(tmp) / "record.md"
+            res = mail.export_message(ctx, draft.id, str(record),
+                                      mailbox=MAILBOX)
+            text = record.read_text(encoding="utf-8")
+            assert token in text                     # plain text, greppable
+            assert "<p>" not in text                 # Graph converted the HTML
+            assert res["format"] == "md" and res["attachments"] == 0
+            # OKF v0.1 front matter, from REAL Graph fields
+            assert 'type: "Email"' in text
+            assert 'title: "ckm365 live export"' in text
+            assert f'description: "{token}' in text  # Graph's own preview
+            assert "timestamp: " in text and "resource: " in text
+            # an unsent draft has no `from`, so no direction is claimed
+            assert 'tags: ["email"]' in text
+
+            # a REAL message does carry one, and it must agree with who
+            # sent it (nothing else about the message is asserted on)
+            newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
+            if newest:
+                real = Path(tmp) / "real.md"
+                mail.export_message(ctx, newest[0].id, str(real),
+                                    mailbox=MAILBOX)
+                sender = (newest[0].sender.address
+                          if newest[0].sender else "").lower()
+                expected = "outbound" if sender == mb.lower() else "inbound"
+                assert f'"{expected}"' in real.read_text().split("---")[1]
+
+            raw = Path(tmp) / "record.eml"
+            res = mail.export_message(ctx, draft.id, str(raw), mailbox=MAILBOX)
+            head = raw.read_bytes()[:2000].lower()
+            assert b"mime-version" in head or b"content-type" in head
+            assert res["format"] == "eml" and res["attachments"] is None
+    finally:
+        _delete(ctx, "messages", draft.id)
+
+
 def test_delivered_messages_are_untouchable(ctx):
     newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
     if not newest:

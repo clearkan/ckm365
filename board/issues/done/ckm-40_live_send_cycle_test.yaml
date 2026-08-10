@@ -1,0 +1,84 @@
+id: CKM-40
+title: Live send-cycle test — send with attachment, receive, download, reply-all
+column: done
+status: done
+created_at: '2026-08-11T10:25:00Z'
+updated_at: '2026-08-11T13:20:00Z'
+assignees: []
+description: |-
+  seanwy (2026-08-11): does the test cycle cover sending an email with an
+  attachment, receiving that email, downloading the attachment from it, and
+  replying-all to it — if the relevant credentials are available?
+
+  It did not. tests/test_live.py is documented as "never sends" and stops at
+  the draft boundary, so every send-tier path (send_draft, delivery, the
+  received copy, reply-all on real delivered mail) was verified only by hand.
+  CKM-32 closed the download gap, which makes the full loop testable for the
+  first time.
+
+  Design — a SEPARATE file, tests/test_live_send_cycle.py, so test_live.py
+  keeps its "never sends" invariant:
+  - Double gate: CKM365_LIVE_ACCOUNT (as usual) AND CKM365_LIVE_SEND=1. The
+    second is explicit opt-in, because this one really does deliver mail.
+    Skips, never fails, when either is absent — matching how the live suite
+    behaves without credentials.
+  - SELF-SEND ONLY. The single recipient is the target mailbox itself,
+    asserted before send_draft is called. Nothing can leave the tenant even
+    if the test is misconfigured.
+  - The cycle: create_draft -> add_attachment (binary payload) -> send_draft
+    -> poll the inbox for the marker subject -> assert the received copy has
+    the attachment -> download_attachment and compare bytes byte-for-byte ->
+    create_reply_draft(reply_all=True) on the RECEIVED message -> send_draft
+    -> poll for the reply -> assert it threads and carries the reply marker.
+  - Unique marker subject per run (uuid4 hex) so polling, assertions and
+    cleanup can never touch real mail.
+  - Zero residue, the same standard as test_live.py: everything the run
+    creates — both received copies AND both Sent Items copies — is deleted
+    in a finally block that runs even on timeout, and the run ends by
+    asserting nothing carrying the marker survives in either folder.
+  - Delivery is polled with a timeout (self-delivery is normally seconds); a
+    timeout FAILS rather than skips, since a stuck send is a real signal.
+
+  Out of scope: sending to any third party, calendar invites (send tier is
+  already covered there by the gating tests), and running this in CI —
+  it is a deliberate, local, opt-in check.
+dependencies: [CKM-32]
+parent_id: null
+priority: medium
+issue_type: task
+tags: [testing, live, send-tier]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-11T10:25:00Z'
+  by: claude
+  details: Issue created in column doing from seanwy's question during the CKM-32
+    session — the send tier had no end-to-end live coverage
+  event: created
+- at: '2026-08-11T12:00:00Z'
+  by: claude
+  details: 'Shipped in v2.5.0 as tests/test_live_send_cycle.py, double-gated
+    (CKM365_LIVE_ACCOUNT + CKM365_LIVE_SEND=1), self-send only, zero residue.
+    The test EARNED ITS KEEP IMMEDIATELY by finding three silent Graph
+    subject-filter failures that nothing else in the suite would have caught,
+    each looking exactly like "no such mail": (1) `subject eq ''<exact>''`
+    returns ZERO rows even for a byte-identical subject — reproduced on a
+    message the test had just sent and received, where startswith/contains
+    both matched it in the same sequence; (2) `contains(subject,…)` returns
+    ZERO rows once the folder is large — it worked on a small mailbox and
+    never matched in a 93k-message inbox where startswith matched instantly;
+    (3) even `startswith(subject,…)` LAGS DELIVERY — a reply delivered at
+    23:22:09 stayed invisible to it for the remaining 5 minutes of the poll
+    and was found by the same query 11 minutes later. (3) cost two ten-minute
+    red herrings: the first diagnosis was "this tenant delivers slowly", and
+    the poll window was raised to 600s before the evidence (delivery
+    timestamps inside the polling window) showed the mail had been there all
+    along. The poller now lists newest-first with NO filter and matches
+    client-side; the same cycle that failed after 10 minutes passes in 21s.
+    All three are in AGENTS.md gotchas, list_messages'' docstring and
+    docs/graph-direct.md, with the rule stated as: never poll for
+    just-arrived mail with a subject filter — list unfiltered or use delta.
+    VERIFIED: green on both tenants (~20s each); residue re-checked by folder
+    scan on both afterwards, nothing left behind.'
+  event: completed
+version: 2

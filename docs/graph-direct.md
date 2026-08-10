@@ -120,6 +120,11 @@ Notes that save time:
   filtered results come back in Graph's own order (`list_messages`'s
   docstring explains the consequence).
 - `search` (KQL) cannot be combined with `$filter` at all.
+- Subject filters are a minefield: `subject eq '<exact>'` never matches,
+  `contains(subject,'…')` dies silently on large folders, and even
+  `startswith(subject,'…')` lags delivery by minutes — so never poll for
+  new mail with one. List newest-first unfiltered and match client-side,
+  or use delta. All three verified live; see AGENTS.md gotchas.
 - Teams endpoints reject `$top` outright (see AGENTS.md gotchas).
 - A failing sub-request inside `$batch` is DATA (a per-item `status`), not
   an exception — check every item.

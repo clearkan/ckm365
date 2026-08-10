@@ -40,6 +40,11 @@ session; everything else worth knowing is one hop from here.
      zero residue
    - `CKM365_LIVE_ACCOUNT=<profile> uv run pytest tests/test_live.py -q`
      — the full integration suite (zero residue, never sends)
+   - `CKM365_LIVE_ACCOUNT=<profile> CKM365_LIVE_SEND=1 uv run pytest
+     tests/test_live_send_cycle.py -q` — the ONLY test that sends
+     (CKM-40): draft+attachment → send → receive → download → reply-all →
+     receive, self-addressed only, zero residue. Double-gated on purpose;
+     run it when touching the send tier, delivery, or attachments.
    Discover real profile names with `uv run ckm365 doctor` or the
    list_accounts tool — they exist only in `~/.config/ckm365/profiles.toml`,
    never in this repo.
@@ -133,6 +138,22 @@ breaking change — `tests/test_offline.py` carries the import contract.
 - `Graph.content()` decodes to `str` (built for VTT transcripts) and will
   corrupt any binary. `Graph.download()` is the streaming byte path — it
   writes to a file and never buffers the body.
+- SUBJECT FILTERS, three silent failures, all caught building CKM-40's
+  poller against real mailboxes (each returns zero rows — indistinguishable
+  from "no such mail"): `subject eq '<exact>'` never matches, even a
+  byte-identical subject; `contains(subject,'…')` matches on a small
+  mailbox and returns nothing in a 93k-message inbox; and even
+  `startswith(subject,'…')` LAGS DELIVERY — a reply delivered at 23:22:09
+  stayed invisible to it for the remaining 5 minutes of the poll and was
+  found by the same query 11 minutes later. Consequence: never poll for
+  just-arrived mail with a subject filter. List newest-first with no
+  filter and match client-side, or use the delta tools in watch.py, which
+  see it immediately. `list_messages`' docstring carries this.
+- A raw `.eml` (`/messages/{id}/$value`) is NOT reliably greppable:
+  Exchange base64-encodes body parts. Measured over 10 real messages on
+  both tenants, a distinctive word from the message's own preview was
+  absent from the raw bytes 3 times; `export_message`'s `.md` record found
+  it 10/10, at 4-7x smaller files. Never promise "grep the .eml".
 - Teams endpoints REJECT `$top` (400 "Query option 'Top' is not
   allowed"): `/me/joinedTeams`, `/teams/{id}/channels`,
   `/teams/{id}/installedApps` all refuse it — only the `/teams`
@@ -142,9 +163,14 @@ breaking change — `tests/test_offline.py` carries the import contract.
 
 ## Current state (2026-08-11)
 
-Version 2.4.0. Phases 1-2 done and live-verified on both tenants: 31 tools
+Version 2.5.0. Phases 1-2 done and live-verified on both tenants: 32 tools
 (mail/calendar/watch/accounts/teams/meetings), three-tier gating, admin CLI,
-multi-user onboarding, event-driven wake pattern. v2.4.0 added read-tier
+multi-user onboarding, event-driven wake pattern. v2.5.0 added read-tier
+`export_message` (CKM-39 — a message to disk as a GREPPABLE `.md` record
+or raw `.eml`, format chosen by the extension; the record is what makes
+correspondence live in a repo without a hand-written sidecar) and the
+opt-in live send-cycle test (CKM-40 — the send tier end to end,
+self-addressed, zero residue). v2.4.0 added read-tier
 `download_attachment` (CKM-32 — attachment bytes stream from Graph's
 `$value` straight to disk via the new `Graph.download()`, never through
 agent context; confined by `CKM365_DOWNLOAD_ROOT`) and rewrote

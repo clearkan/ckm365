@@ -1,0 +1,105 @@
+id: CKM-39
+title: export_message — write a message to disk as a greppable repo record
+column: done
+status: done
+created_at: '2026-08-11T10:20:00Z'
+updated_at: '2026-08-11T11:30:00Z'
+assignees: []
+description: |-
+  seanwy (2026-08-11): correspondence needs to land in the engagement repos
+  agents work in, and be GREPPABLE there — the current practice of keeping a
+  hand-written sidecar .md "extract" of each message alongside the real
+  artifact is duplicated effort and drifts from the source.
+
+  Asked: can we export as .eml or .msg, whichever manages better in git?
+
+  Findings that decide the design (measured on intixa inbox, 3 messages):
+  - .msg is out: Outlook's proprietary OLE compound format, binary, not
+    greppable, no Graph endpoint produces it, and any writer would be a new
+    third-party dependency (needs sign-off, and would still not be greppable).
+  - .eml IS available for free — GET /messages/{id}/$value returns the raw
+    MIME and Graph.download() (CKM-32) already streams it safely.
+  - BUT raw .eml is NOT reliably greppable: Exchange base64-encodes body
+    parts. Sampled 3 real messages — 7bit/7bit, base64+quoted-printable,
+    and base64+base64. On the third, a distinctive word from the message's
+    own preview did NOT appear in the raw bytes. So .eml alone cannot
+    replace the sidecar; that is exactly the failure mode to avoid.
+
+  Design (read tier, no new consent — the body is an ordinary message
+  property under Mail.Read[.Shared]):
+  - export_message(message_id, dest_path) -> written path + byte count.
+    FORMAT IS INFERRED FROM THE EXTENSION, so there is one source of truth
+    and the caller states intent naturally:
+      .md / .markdown / .txt -> the greppable record (default shape)
+      .eml                   -> raw MIME, byte-exact, full fidelity
+  - The greppable record is deterministic and diff-friendly: YAML front
+    matter (subject, from, to, cc, date, Graph id, internet message id,
+    mailbox, has_attachments, is_bulk/is_auto_reply, web link), then the
+    PLAIN-TEXT body, then an attachment manifest listing name, size, kind
+    and attachment_id so download_attachment can fetch the bytes.
+  - Take the text body from Graph, not from a local HTML converter: the
+    Prefer: outlook.body-content-type="text" header (already used by
+    get_message) makes Graph do the conversion server-side, so no HTML
+    stripping code and no new dependency.
+  - Same disk discipline as download_attachment: confined by
+    CKM365_DOWNLOAD_ROOT (falling back to CKM365_ATTACH_ROOT), never
+    overwrites, no residue on failure. Share one helper between the two.
+  - Logging stays ids/counts only — an export writes real message content
+    to disk, so the subject and body must never reach a log line.
+
+  Out of scope v1: bulk/threaded export, downloading attachments as a side
+  effect (the manifest carries the ids — call download_attachment), .msg,
+  and any HTML-to-markdown rendering beyond what Graph's text conversion
+  gives.
+dependencies: [CKM-32]
+parent_id: null
+priority: high
+issue_type: feature
+tags: [mail, export, read-tier]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-11T10:20:00Z'
+  by: claude
+  details: Issue created in column doing from seanwy's request during the CKM-32
+    session, after probing real MIME on a live tenant showed raw .eml is not
+    reliably greppable (base64 body parts)
+  event: created
+- at: '2026-08-11T11:30:00Z'
+  by: claude
+  details: 'Shipped in v2.5.0. export_message (read tier), format inferred from
+    the destination extension (.md/.markdown/.txt = greppable record, .eml = raw
+    MIME). MEASURED, both tenants, 10 real messages: a distinctive word from each
+    message''s own preview was found in the .eml 7/10 and in the .md record 10/10,
+    with the .md 4-7x smaller (1.8-40 KB vs 8.6-289 KB) — that ratio is the whole
+    argument for the format. Graph does the HTML->text conversion via the Prefer
+    header, so no HTML stripping code and no new dep. Front matter quotes
+    defensively (a subject carrying quotes, colons or newlines cannot inject a
+    second key — offline test). Record is byte-deterministic so re-export shows no
+    git diff. Attachment bytes are never written; the manifest carries the ids for
+    download_attachment. Shares _write_target/_write_atomic with CKM-32, so the
+    root confinement, no-overwrite and no-residue rules are one implementation.
+    VERIFIED: 7 new offline tests; live on BOTH tenants (round trip on a
+    self-created draft asserts the body is plain text and the HTML is gone).'
+  event: completed
+- at: '2026-08-11T13:15:00Z'
+  by: claude
+  details: 'seanwy mid-session: make the record an Open Knowledge Format document
+    (openknowledgeformat.com) so exports can live in an okf/ repo — offered as a
+    flag, "can still keep yaml format within md file if easier". Fetched the OKF
+    v0.1 spec: markdown + YAML front matter, required `type`, recommended
+    title/description/resource/tags/timestamp, extension keys allowed. DECIDED
+    OKF-by-default rather than a flag, because extension keys mean one format
+    can be both an OKF document and a full mail record — a flag would buy two
+    code paths and two things to test for nothing. OKF names win where they
+    overlap (title=subject, timestamp=date, resource=webLink), so nothing is
+    written twice; description is Graph''s own bodyPreview (falling back to the
+    body — an OKF doc with an empty description is a poor citizen of its repo);
+    tags are derived facets (email, inbound/outbound, attachments, bulk,
+    auto-reply). Direction is OMITTED when Graph has no sender (an unsent draft)
+    rather than guessed. VERIFIED: offline (incl. a hostile subject that tries
+    to inject a second `type:` key) and live on both tenants, where a real
+    Google Alert exported as tags ["email","inbound","bulk"] with a clean
+    markdown body.'
+  event: updated
+version: 3
