@@ -60,6 +60,6 @@ history:
   event: moved
 - at: '2026-07-30T01:47:29Z'
   by: claude
-  details: Subagent-implemented (watch.py: list_new_messages/wait_for_message on Graph delta w/ deltatoken=latest bootstrap + server-side URL rebuild, get_watch_command, ckm365 watch CLI exit 0/3); 9 offline tests; merged by claude; live background-wake test run in-session. Moved doing -> done
+  details: 'Subagent-implemented (watch.py: list_new_messages/wait_for_message on Graph delta w/ deltatoken=latest bootstrap + server-side URL rebuild, get_watch_command, ckm365 watch CLI exit 0/3); 9 offline tests; merged by claude; live background-wake test run in-session. Moved doing -> done'
   event: moved
 version: 1
