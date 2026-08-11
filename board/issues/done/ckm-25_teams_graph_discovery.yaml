@@ -61,7 +61,7 @@ history:
     /me/joinedTeams vs app-only /teams, projection, id encoding as a single
     segment, no mailbox param, preset counts); consent script dry-run
     resolved all three scope ids against real Graph; live-smoke --teams on
-    intixa correctly reports the pre-consent 403 as a SKIP with mail path
+    the operator tenant correctly reports the pre-consent 403 as a SKIP with mail path
     still green. PENDING (seanwy, tenant-touching): run
     ./scripts/add-teams-scopes.sh --yes on a tenant, re-login, then
     live-smoke --teams to verify the post-consent reads — especially that

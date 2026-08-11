@@ -61,8 +61,8 @@ history:
 - at: '2026-07-30T14:13:08Z'
   by: claude
   details: 'Moved to todo — all non-interactive prep is DONE and the issue is
-    ready for the interactive sitting with seanwy (pick ONE tenant: axomem or
-    intixa, per ckm365 doctor). Prepared: scripts/add-app-permissions.sh
+    ready for the interactive sitting with seanwy (pick ONE tenant, per
+    ckm365 doctor). Prepared: scripts/add-app-permissions.sh
     (application role-type permissions, preserves delegated scopes, verifies
     against actual appRoleAssignments, --dry-run mode; bash -n + merge logic
     tested offline) and docs/app-only-setup.md (RBAC-FIRST ordering,
@@ -76,8 +76,8 @@ history:
   event: moved
 - at: '2026-07-30T14:52:38Z'
   by: claude
-  details: 'Moved to doing — interactive sitting started with seanwy, tenant:
-    intixa (owner''s pick). Following docs/app-only-setup.md, RBAC-only path
+  details: 'Moved to doing — interactive sitting started with seanwy on the
+    owner''s chosen tenant. Following docs/app-only-setup.md, RBAC-only path
     first.'
   event: moved
 - at: '2026-07-30T21:40:37Z'
@@ -96,11 +96,12 @@ history:
     section, CI/Jenkins pipeline recipe. NOTE: no pwsh on the dev box —
     ps1 scripts are balance-checked only; first execution happens where
     pwsh + ExchangeOnlineManagement exist. Remaining interactive: run the
-    bootstrap (az already authed to intixa).'
+    bootstrap (az already authed to the chosen tenant).'
   event: updated
 - at: '2026-07-30T23:17:45Z'
   by: claude
-  details: 'DONE — live-verified end to end on intixa, fully scripted run.
+  details: 'DONE — live-verified end to end on the chosen tenant, fully
+    scripted run.
     seanwy ran create-exo-automation-app.sh --yes (automation app, cert PFX,
     Exchange.ManageAsApp consent grant-verified, exchange-admin directory
     role verified); everything after was unattended: app-only EXO connect OK
@@ -108,7 +109,7 @@ history:
     setup-app-rbac.ps1 -Apply created SP registration + ckm365-app-scope +
     both Application role assignments, Test-ServicePrincipalAuthorization
     InScope True (scoped mailbox) / False (operator mailbox); Graph-app cert
-    generated + uploaded; [profiles.intixa-app] added (allow_send=false).
+    generated + uploaded; an app-only profile added (allow_send=false).
     VERIFIED (ClearKan asks 5.1/5.2): doctor OK; live-smoke app-only read OK
     and deny probe 403 ErrorAccessDenied on out-of-scope mailbox (the
     NEGATIVE test, at the Graph layer); full live suite 5/5 app-only;
@@ -118,6 +119,7 @@ history:
     KEY RESULT: RBAC-only is sufficient — ZERO Graph application
     permissions consented; add-app-permissions.sh not needed (kept in
     reserve). Runbook + usage-modes updated to verified status. Per-tenant
-    repetition for axomem remains open (new issue if/when needed).'
+    repetition for the second tenant remains open (new issue if/when
+    needed).'
   event: moved
 version: 1

@@ -49,7 +49,7 @@ description: |-
   BUILD PATH: add the two scopes to our OWN tenant first (we are admin
   there — a new consent script mirroring add-teams-scopes.sh, merging
   rather than replacing), build the read-only tools on their own consent
-  tier as with CKM-25, and live-verify on intixa against a real meeting
+  tier as with CKM-25, and live-verify on a real tenant against a meeting
   with transcription switched on before claiming anything.
 
   Verify live before believing anything — the CKM-25 Teams work 400'd on
@@ -74,7 +74,7 @@ history:
   by: claude
   details: 'Code COMPLETE, PARTIALLY live-verified, blocked on one tenant
     setting. seanwy authorised the consent step; add-transcript-scopes.sh
-    dry-run then applied on intixa — OnlineMeetings.Read +
+    dry-run then applied on the operator tenant — OnlineMeetings.Read +
     OnlineMeetingTranscript.Read.All consented and grant-verified, existing
     mail/calendar/teams scopes confirmed intact after the merge.
     FINDING (useful): NO re-login was needed — the cached token already
@@ -87,7 +87,7 @@ history:
     read-only "meetings" preset excluded from "all" like teams; live-smoke
     --transcripts. Offline suite 73 passed.
     LIVE VERIFIED: find_meeting_id resolves a real calendar join URL to an
-    online-meeting id on intixa.
+    online-meeting id on the operator tenant.
     BLOCKED: list/get transcripts return 403 "Graph API access to
     transcripts is disabled for this tenant" — the Teams tenant kill-switch,
     OFF by default and ENFORCED since 2026-07-29 (three days ago), which is

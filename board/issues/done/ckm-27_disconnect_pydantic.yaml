@@ -27,7 +27,7 @@ description: |-
     (what MCP SDK/pydantic-ai rely on)
   - MCPServer.add_tool over all presets (schema generation on dataclass
     returns)
-  - LIVE: full suite on intixa + app-only smoke (projection rewrite
+  - LIVE: full suite on a real tenant + app-only smoke (projection rewrite
     touches every read path)
 
   SemVer: 2.0.0 — the blessed surface said "pydantic models";
@@ -58,7 +58,7 @@ history:
     19 dataclass-returning tools — pydantic consumers lose nothing.
     VERIFIED: offline 63 passed; clean venv with NO pydantic + NO mcp ran a
     full MockTransport tool call (projection/set_graph/close); LIVE suite
-    5/5 delegated intixa + app-only smoke with 403 deny probe — every read
+    5/5 delegated + app-only smoke with 403 deny probe — every read
     path re-verified against real Graph. Docs/CHANGELOG/notes to ClearKan
     (tmp/clearkan-pydantic-disconnect-notes.md) updated.'
   event: moved

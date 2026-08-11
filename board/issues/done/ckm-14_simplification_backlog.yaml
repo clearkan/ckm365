@@ -49,6 +49,6 @@ history:
   event: created
 - at: '2026-07-30T04:03:33Z'
   by: claude
-  details: Applied: pull() list helper (4 sites), create_draft body_html convention, add_attachment override params dropped, is_read shape normalized, smoke scripts rely on Ctx pinning, _require_draft (done earlier w/ send work). KEPT by decision: literal tool signatures (no @tool decorator — 'plain typed functions are the core artifact'), per-call account param (cross-tenant-in-one-session is a real flow), app-only code (requirement-mandated, scope-tested since CKM-16), if-chain patch builders (clearer than comprehensions). Moved backlog -> done
+  details: 'Applied: pull() list helper (4 sites), create_draft body_html convention, add_attachment override params dropped, is_read shape normalized, smoke scripts rely on Ctx pinning, _require_draft (done earlier w/ send work). KEPT by decision: literal tool signatures (no @tool decorator — ''plain typed functions are the core artifact''), per-call account param (cross-tenant-in-one-session is a real flow), app-only code (requirement-mandated, scope-tested since CKM-16), if-chain patch builders (clearer than comprehensions). Moved backlog -> done'
   event: moved
 version: 1

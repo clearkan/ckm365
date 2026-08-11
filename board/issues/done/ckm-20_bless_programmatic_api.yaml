@@ -51,7 +51,7 @@ history:
     list_new_messages dict return shape ({"messages","delta_token","matched"}
     — ClearKan''s sample assumed a tuple; API blessed as-is, not changed).
     Import-contract test added (59 offline tests pass). Live-verified the
-    documented pattern on intixa: bootstrap poll + delta token round-trip +
+    documented pattern on a real tenant: bootstrap poll + delta token round-trip +
     context-manager close, counts/ids only.'
   event: moved
 version: 1

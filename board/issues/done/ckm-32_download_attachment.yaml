@@ -44,8 +44,8 @@ description: |-
   from calendar events, any parsing/conversion of the downloaded file.
 
   seanwy (2026-08-11): hit AGAIN in live use, second engagement in a row —
-  raising priority to high. This time on the EngageRocket tech DD: a 2.96 MB
-  .docx meeting transcript ("Fabian Most and Sean Whiteley.docx") attached
+  raising priority to high. This time on a client tech due-diligence
+  engagement: a 2.96 MB .docx meeting transcript attached
   to a message in SENT ITEMS needed to land in the engagement repo's
   correspondence/ folder for the evidence record. list_attachments returned
   the metadata fine; there was no way to get the bytes, so the correspondence
@@ -75,7 +75,7 @@ history:
   event: created
 - at: '2026-08-11T00:00:00Z'
   by: claude
-  details: Second live hit (EngageRocket DD, 2.96 MB transcript .docx in sent
+  details: Second live hit (client tech DD, 2.96 MB transcript .docx in sent
     items, needed for the repo evidence record; no workaround run this time).
     Priority medium -> high; sketch updated (sent-items parity, stream path
     in v1)
