@@ -1,6 +1,7 @@
 """Offline sanity tests — no tenant, no network (httpx.MockTransport)."""
 
 import inspect
+import json
 import sys
 import threading
 
@@ -221,6 +222,30 @@ def _ctx(**kw):
 def test_write_tools_gated():
     with pytest.raises(WriteDisabled):
         mail.create_draft(_ctx(), to=["a@x.com"], subject="s", body_html="b")
+
+
+def test_create_draft_posts_to_the_mailbox_message_collection():
+    """Reaches the GRAPH CALL, which the gating test above never does — a
+    missing import in this path once survived every offline test and was
+    only reachable live (found when mail.py was split into a package)."""
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["body"] = request.content.decode()
+        return httpx.Response(201, json={"id": "d1", "isDraft": True})
+
+    ctx = _ctx(write_enabled=True)
+    ctx._graphs["p"] = make_graph(handler)
+    draft = mail.create_draft(ctx, to=["a@x.com"], cc=["c@x.com"],
+                              subject="s", body_html="<p>b</p>",
+                              mailbox="me@x.com")
+    assert draft.id == "d1" and draft.is_draft
+    assert seen["url"].endswith("/users/me%40x.com/messages")
+    body = json.loads(seen["body"])
+    assert body["toRecipients"] == [{"emailAddress": {"address": "a@x.com"}}]
+    assert body["ccRecipients"] == [{"emailAddress": {"address": "c@x.com"}}]
+    assert body["subject"] == "s" and body["body"]["contentType"] == "html"
 
 
 def test_tools_for_presets():

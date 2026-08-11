@@ -3,6 +3,38 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.5.1] — 2026-08-11
+
+Housekeeping only: no tool, signature, or behaviour changed.
+
+### Changed
+- **`tools/mail.py` is now `tools/mail/`**, split at the seams it had
+  grown: `common` (paths, Prefer headers, the draft guard, `/$batch`
+  fan-out), `disk` (local-disk discipline), `read`, `attachments`,
+  `export`, `drafts`, `triage`. The file had passed 1000 lines, which
+  CLAUDE.md names as the signal to stop and restructure; no module now
+  exceeds ~265. `ckm365.tools.mail` re-exports every tool, so the
+  SemVer'd import path and the import-contract test are untouched —
+  import from the package, never a submodule.
+- The move was mechanical and is checked as such: an AST comparison
+  proves all 48 definitions are identical to their pre-split form, modulo
+  the shared helpers that dropped a leading underscore (`message_path`,
+  `apply_each`, `write_target`, …) now that they cross module lines.
+
+### Fixed
+- `create_draft` had no offline test that reached its Graph call — the
+  gating test stops at `WriteDisabled` — so a missing import in that path
+  was invisible to 133 offline tests and reachable only live. The split
+  surfaced it; there is now a test that asserts the POST URL and body.
+
+### Board hygiene
+- Scrubbed real tenant profile names from six issues and a client
+  engagement plus a person's name from CKM-32: the PUBLIC-repo rule
+  forbids them and board history had accumulated them anyway.
+- Repaired four issue files written in v1.2.0 that did not parse as YAML
+  (an unquoted `details:` carrying a `": "`). All 40 issues now parse and
+  every `column` matches its directory.
+
 ## [2.5.0] — 2026-08-11
 
 Correspondence that agents can actually search, and the first end-to-end

@@ -82,7 +82,17 @@ watch: delta triggers; accounts; teams: org-scoped discovery, read-only,
 separate consent tier) → front doors `server.py` (CLI: serve/
 watch/login/logout + admin.py: mailbox/app/doctor) and `agent_tools.py`
 (pydantic-ai). Tests: `tests/test_offline.py` + per-module files;
-`tests/test_live.py` is the env-gated live suite.
+`tests/test_live.py` is the env-gated live suite and
+`tests/test_live_send_cycle.py` the doubly-gated one that sends.
+
+`tools/mail/` is the one PACKAGE, split when the single file passed 1000
+lines: `common.py` (paths, Prefer headers, draft guard, /$batch fan-out),
+`disk.py` (local-disk discipline), `read.py`, `attachments.py`,
+`export.py`, `drafts.py`, `triage.py`. `ckm365.tools.mail` re-exports
+every tool, so the SemVer'd import path is unchanged and the split stays
+an implementation detail — import from the package, never a submodule.
+Shared helpers inside it drop the leading underscore (`message_path`,
+`apply_each`); anything still underscored is private to its module.
 
 Ctx/Graph/Auth are safe for concurrent use across threads; call
 `Ctx.close()` on shutdown (or use Ctx as a context manager). The flock in
