@@ -14,6 +14,30 @@ JSON, `g.paged()` for collections, `g.batch()` for fan-out, `g.download()`
 for bytes. Find the endpoint in Microsoft's API reference (table at the
 bottom), try it in Graph Explorer first, then file the gap.
 
+## First: check there is not already a tool
+
+Half the direct calls that have actually happened were not gaps. On
+2026-08-18 a real outbound cycle wrote eight `tmp/` scripts, and one of
+them archived a message by hand from `/messages/{id}/$value` — which is
+`export_message`, only worse (Exchange base64-encodes body parts, so the
+`.eml` it produced was not greppable). CKM-42 built the rest of what those
+scripts were reaching for. Look here before you reach for `Graph`:
+
+| If you were about to hand-roll | Use |
+|---|---|
+| `GET /messages/{id}/$value` to archive a message | `export_message` (`.md` record — greppable — or `.eml`) |
+| `GET /messages/{id}/attachments/{id}/$value` | `download_attachment` (streams to disk, never through context) |
+| a splice into `<body>` to revise a reply | `revise_draft` (keeps the quoted history AND the signature) |
+| pasting an HTML signature literal | `signature_html` on the profile, applied at draft creation |
+| `DELETE /messages/{id}` on a draft you abandoned | `discard_draft` (drafts only, goes to Deleted Items) |
+| `DELETE /messages/{id}/attachments/{id}` | `remove_attachment` |
+| deleting a reply to re-seed it as a reply-all | `discard_draft` + `create_reply_draft(reply_all=True)` |
+| fetch + strip HTML + assert recipients/attachments/quote | `verify_message` (one read-tier call, before or after sending) |
+| a PATCH loop over many messages' read state/flags/folder | the triage tools — they batch 20 to a round trip |
+
+`uv run ckm365 serve --help` lists the presets, and every tool's docstring
+IS its MCP description — read those before concluding something is missing.
+
 ## The rules (same as everywhere else in this repo)
 
 1. **Read tier by default.** `Ctx.create()` with no flags — or a bare

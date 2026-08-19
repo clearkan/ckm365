@@ -86,9 +86,9 @@ watch/login/logout + admin.py: mailbox/app/doctor) and `agent_tools.py`
 `tests/test_live_send_cycle.py` the doubly-gated one that sends.
 
 `tools/mail/` is the one PACKAGE, split when the single file passed 1000
-lines: `common.py` (paths, Prefer headers, draft guard, /$batch fan-out),
-`disk.py` (local-disk discipline), `read.py`, `attachments.py`,
-`export.py`, `drafts.py`, `triage.py`. `ckm365.tools.mail` re-exports
+lines: `common.py` (paths, Prefer headers, draft guard, the compose
+fence, /$batch fan-out), `disk.py` (local-disk discipline), `read.py`,
+`attachments.py`, `export.py`, `drafts.py`, `verify.py`, `triage.py`. `ckm365.tools.mail` re-exports
 every tool, so the SemVer'd import path is unchanged and the split stays
 an implementation detail — import from the package, never a submodule.
 Shared helpers inside it drop the leading underscore (`message_path`,
@@ -120,6 +120,17 @@ breaking change — `tests/test_offline.py` carries the import contract.
   reload-before-access + flock; never bypass Auth's helpers.
 - `createReply` with a `body` replaces Graph's quoted history — seed first,
   then PATCH the top (`_insert_top`), with If-Match.
+- Our own text in a draft body is FENCED with HTML comments
+  (`common.BODY_MARK`/`SIGNATURE_MARK`, CKM-42) because HTML alone cannot
+  tell our text, the signature and the quoted history apart. The
+  2026-08-18 scripts guessed the boundary from a literal phrase inside the
+  signature, which works exactly once. `revise_draft` rewrites inside the
+  fence; `verify_message` reads it back and SAYS (`boundary`) when it had
+  to fall back to guessing.
+- Graph reports `hasAttachments: false` for a message whose only
+  attachments are INLINE (a signature image, a pasted screenshot), so
+  never skip the attachment listing on the strength of that flag —
+  `verify_message` always lists.
 - MCP tool schemas come from `bind()`-trimmed signatures; after changing
   tools the running MCP server needs a reconnect (`/mcp`) to show them.
 - First Graph hit on a cold mailbox can 503
@@ -171,7 +182,21 @@ breaking change — `tests/test_offline.py` carries the import contract.
   client-side via `pull()`; `$select`/`$expand` are fine. Offline mocks
   accept anything, so this only showed up live (it did, on first run).
 
-## Current state (2026-08-11)
+## Current state (2026-08-20)
+
+Version 2.6.0 adds the compose→send→verify loop (CKM-42, the approved
+option A of CKM-41): write-tier `revise_draft` (rewrite your text, keep
+the quoted history AND the signature — draft bodies are fenced with HTML
+comments so the region is exact), `discard_draft`, `remove_attachment`,
+per-profile `signature_html` in profiles.toml applied at draft creation,
+and read-tier `verify_message` (recipients, attachments, quoted-thread
+survival, signature presence, non-ASCII in the text you wrote). No new
+Graph scope, no consent, no tenant operation. OFFLINE-VERIFIED ONLY so
+far — `scripts/draft-cycle-smoke.py` (now walking the whole loop through
+the tools) has not been run live for this release; do that before relying
+on it. CKM-41's options B (transcripts/CKM-30) and C (client-tenant
+publisher verification/CKM-31) are deliberately NOT started — seanwy
+approved A only, by phone, 2026-08-20.
 
 Version 2.5.0. Phases 1-2 done and live-verified on both tenants: 32 tools
 (mail/calendar/watch/accounts/teams/meetings), three-tier gating, admin CLI,

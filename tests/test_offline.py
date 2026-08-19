@@ -249,9 +249,9 @@ def test_create_draft_posts_to_the_mailbox_message_collection():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 12  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 23
-    assert len(tools_for(["mail"], write=True, send=True)) == 24
+    assert len(tools_for(["mail"])) == 13  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 27
+    assert len(tools_for(["mail"], write=True, send=True)) == 28
     assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
     assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
     # The triage tools (CKM-33/34/36) are write tier, not send tier: read
@@ -266,13 +266,19 @@ def test_tools_for_presets():
     # write go to LOCAL disk (fenced by CKM365_DOWNLOAD_ROOT).
     assert mail.download_attachment in tools_for(["mail"])
     assert mail.export_message in tools_for(["mail"])
+    # verify_message (CKM-42) too: checking what a draft says before it goes
+    # is a READ, and the compose loop's check must work in a read-only
+    # session (and on the sent copy afterwards).
+    assert mail.verify_message in tools_for(["mail"])
+    assert mail.revise_draft not in tools_for(["mail"])
+    assert mail.discard_draft in tools_for(["mail"], write=True)
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 28
-    assert len(tools_for(["all"], write=True, send=True)) == 29
+    assert len(tools_for(["all"], write=True)) == 32
+    assert len(tools_for(["all"], write=True, send=True)) == 33
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 32
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 36
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
@@ -628,14 +634,16 @@ def test_blessed_api_import_contract():
                                        update_event)
     from ckm365.tools.mail import (add_attachment, complete_flag,  # noqa: F401
                                    create_draft, create_forward_draft,
-                                   create_reply_draft, download_attachment,
+                                   create_reply_draft, discard_draft,
+                                   download_attachment,
                                    export_message, flag,
                                    get_message, get_message_headers,
                                    group_by_sender,
                                    list_attachments, list_mail_folders,
                                    list_messages, mark_read, mark_unread,
-                                   move_message, send_draft, unflag,
-                                   update_draft)
+                                   move_message, remove_attachment,
+                                   revise_draft, send_draft, unflag,
+                                   update_draft, verify_message)
     from ckm365.tools.teams import (list_channels,                 # noqa: F401
                                     list_installed_apps, list_teams)
     from ckm365.tools.watch import (get_watch_command,             # noqa: F401

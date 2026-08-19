@@ -15,7 +15,7 @@ READ = {
     "mail": [mail.list_messages, mail.get_message, mail.get_message_headers,
              mail.list_mail_folders,
              mail.list_attachments, mail.download_attachment,
-             mail.export_message, mail.group_by_sender,
+             mail.export_message, mail.group_by_sender, mail.verify_message,
              watch.list_new_messages, watch.wait_for_message,
              watch.get_watch_command],
     "calendar": [calendar.list_events, calendar.get_event],
@@ -26,7 +26,8 @@ READ = {
 }
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,
-             mail.update_draft, mail.create_draft, mail.add_attachment,
+             mail.update_draft, mail.revise_draft, mail.create_draft,
+             mail.discard_draft, mail.add_attachment, mail.remove_attachment,
              # triage: metadata only — read state, flags, filing. Nothing
              # leaves the tenant, so these are write tier, not send tier.
              mail.mark_read, mail.mark_unread, mail.flag, mail.unflag,

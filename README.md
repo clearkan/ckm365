@@ -63,7 +63,9 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
   never part of the default consent set.
 - **Draft-only mail writes** — replies/forwards seeded via Graph
   `createReply`/`createReplyAll`/`createForward`, then PATCHed (with
-  `If-Match`); never modify delivered message CONTENT. `send_draft` only
+  `If-Match`) into a FENCED region, so `revise_draft` can rewrite what you
+  wrote without disturbing the quoted history or the signature; never
+  modify delivered message CONTENT. `send_draft` only
   sends drafts, and only in the send tier. The triage tools are the one
   thing that touches delivered mail, and only its metadata (read state,
   flag, folder) — write tier, never send tier, since nothing leaves the
@@ -76,7 +78,7 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 
 | Server flags | Tools exposed | Delegated scopes requested |
 |---|---|---|
-| *(none)* | reads + `list_accounts` + `download_attachment` + `export_message` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
+| *(none)* | reads + `list_accounts` + `download_attachment` + `export_message` + `verify_message` | `Mail.Read[.Shared]`, `Calendars.Read[.Shared]` |
 | `--write` | + draft/calendar writes, attachments, triage (read state, flags, move) | `*.ReadWrite[.Shared]` |
 | `--write --enable-send` | + `send_draft`, attendee-bearing event writes, meeting responses | + `Mail.Send[.Shared]` |
 
@@ -118,6 +120,37 @@ the words in the message (measured: greppable 7/10 for `.eml` vs 10/10 for
 `.md`, at 4–7× the size). `.msg` is not offered: no Graph endpoint
 produces it, it is binary, and writing it would need a third-party
 dependency.
+
+## The compose loop
+
+Composing a reply is `create_reply_draft` → `revise_draft` →
+`add_attachment` / `remove_attachment` → `verify_message` → `send_draft`,
+with `discard_draft` for "start again".
+
+What each one exists to stop you hand-rolling:
+
+- **`revise_draft`** replaces only the text you wrote. `update_draft`'s
+  `body_html` replaces the WHOLE body, which on a reply throws away the
+  quoted history Graph assembled; the tools fence their own region with
+  HTML comments (`<!--ckm365:body-->`, invisible in every mail client) and
+  `revise_draft` rewrites what is inside it. On a draft written elsewhere
+  it inserts at the top of the body and fences that, so the next revision
+  replaces properly.
+- **`signature_html`** on the profile (`profiles.toml`) is appended below
+  your text at draft creation — `signature=False` skips it for one call —
+  and sits in its own fence, so revising the text above never disturbs it.
+  It is local by design: Outlook's roaming signature would need
+  `MailboxSettings.Read`, a scope this app deliberately never requests.
+- **`discard_draft`** throws away a draft (and only a draft — Graph moves
+  it to Deleted Items, so it is recoverable). Switching a reply to a
+  reply-all is discard + `create_reply_draft(reply_all=True)`: Graph fixes
+  the recipients when it seeds the draft.
+- **`remove_attachment`** is `add_attachment`'s inverse, drafts only.
+- **`verify_message`** is read tier and answers the pre-send questions in
+  one call: recipients, attachment names/sizes/kinds, did the quoted
+  thread survive, is the signature still there, and which non-ASCII
+  characters are in the text you wrote (the smart-quote check — reported,
+  never corrected). Run it on the draft, then on the sent copy.
 
 ## Setup
 
@@ -173,5 +206,8 @@ curated internet headers for bulk/auto-reply detection; v2.4.0 adds
 read-tier `download_attachment` (attachment bytes streamed to disk, never
 into agent context); v2.5.0 adds `export_message` (a message as a
 greppable `.md` record or raw `.eml`) and an opt-in live send-cycle test
-covering the send tier end to end. Security + simplification reviews done.
-Next: SharePoint/Teams file sync (CKM-18).
+covering the send tier end to end; v2.6.0 closes the compose loop
+(`revise_draft`, `discard_draft`, `remove_attachment`, read-tier
+`verify_message`, and per-profile HTML signatures) — offline-verified;
+its live draft-cycle run is still outstanding. Security + simplification
+reviews done. Next: SharePoint/Teams file sync (CKM-18).

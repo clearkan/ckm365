@@ -1,0 +1,267 @@
+id: CKM-41
+title: Where the next unit of effort goes — options for seanwy to pick
+column: done
+status: done
+created_at: '2026-08-19T15:40:00Z'
+updated_at: '2026-08-20T02:20:00Z'
+assignees: []
+description: |-
+  DECISION TICKET — no build implied. seanwy asked (by phone, 2026-08-19)
+  for ckm365 to be picked up and for the next steps to be laid out as
+  OPTIONS rather than a plan. Pick one (or one-and-a-half — see the
+  recommendation) and the chosen option becomes its own issue.
+
+  ## The decision this addresses
+
+  The repo has been still since 2026-08-11 (v2.5.1, 32 tools, phases 1-2
+  live-verified). The TOOLS have not been still: they were used hard on
+  2026-08-18 for real outbound correspondence — read a mailbox for an
+  inbound attachment, build a reply-all with an attachment, send it,
+  then verify the sent copy against Sent Items. It worked. Nothing is
+  broken.
+
+  So the question is not "what is failing", it is **what deserves the
+  next unit of effort**: the compose path that is already carrying daily
+  load, a capability that is blocked on you and nobody else, an
+  external clock that has not been started, or nothing at all.
+
+  ## Field evidence from 2026-08-18 (the new input)
+
+  Git-ignored `tmp/` picked up EIGHT throwaway scripts dated that day.
+  Every one of them drops out of the tool surface and calls Graph
+  directly through the blessed `Ctx`/`Graph` API. What they had to do by
+  hand:
+
+  - **Revise a reply body four times.** `update_draft(body_html=...)`
+    REPLACES the whole body, so amending a seeded reply loses the quoted
+    history. The private `_insert_top` in `tools/mail/drafts.py` is the
+    only thing that knows how to splice at the top of `<body>`, and it
+    is only reachable at CREATE time. The scripts re-implemented that
+    splice, then re-implemented it again to preserve the signature block
+    while replacing the text above it.
+  - **Paste an HTML signature by hand.** The operator's signature block
+    (name, phone, links) is a ~700-byte HTML literal copy-pasted into
+    two separate scripts. There is no signature concept anywhere in the
+    package.
+  - **Discard a draft** — raw `DELETE` on the message, because there is
+    no discard tool. (`move_message` deliberately refuses deletion; a
+    DRAFT you created and no longer want is a different case from a
+    delivered message, and is currently unserved.)
+  - **Remove a stale attachment from a draft** — raw `DELETE` on the
+    attachment. `add_attachment` has no inverse.
+  - **Switch a reply to a reply-all mid-flight** — done by deleting the
+    draft and re-seeding from `createReplyAll`, because the choice is
+    fixed at creation.
+  - **Verify the outcome, three times** (draft pre-send, draft final,
+    sent copy): fetch, list attachments, strip HTML, assert recipients,
+    assert the quoted thread survived, and scan for non-ASCII leakage
+    (smart quotes) before letting it go. All hand-rolled.
+
+  Two honest caveats on that list. The archive step used raw
+  `/$value` when `export_message` already does exactly that job better —
+  so part of the friction is DISCOVERABILITY, not missing capability.
+  And nothing here produced a wrong outcome; it produced a slow, bespoke
+  one that a less careful agent could have got wrong silently.
+
+  Also observed: every script pinned BOTH `account=` and `mailbox=`
+  explicitly. Sensible discipline given `Ctx.target()` falls back
+  silently (explicit > profile default > signed-in user), but it is
+  discipline, not a guardrail — nothing makes a send-tier call state
+  which identity it is speaking as, and nothing echoes back which one it
+  used.
+
+  ## Board state, for context
+
+  - CKM-30 (meeting transcripts) — code complete, live-verified as far
+    as it can go, 403ing on a TENANT policy switch that only you can
+    flip. Sitting in `doing` since 2026-08-01.
+  - CKM-31 (client-tenant offering) — no code needed; publisher
+    verification is the long-lead item and has not been started.
+  - CKM-18 (SharePoint/Teams-site file sync) — real recurring manual
+    pain, but a whole new consent tier and the largest of the four.
+  - CKM-28 — research record, closed question, no build.
+
+  ---
+
+  ## OPTION A — Close the compose→send→verify loop
+
+  WHAT: a write-tier slice aimed squarely at yesterday's eight scripts.
+  Roughly: `revise_draft` (replace the text above the quote/signature,
+  keeping both — promote `_insert_top` to a real tool), per-profile
+  signature support in `profiles.toml` applied at draft creation,
+  `discard_draft`, `remove_attachment`, and a read-tier `verify_message`
+  that returns the assertions the scripts kept re-deriving (recipients,
+  attachment names/sizes, quoted-thread present, non-ASCII in the new
+  text). Plus a docs pass so `export_message` gets found next time.
+
+  COST: one minor release, maybe two sessions. No new Graph scope, no
+  consent, no tenant operation, nothing for you to approve. Every piece
+  is a thin wrapper over calls the package already makes. Some growth in
+  tool count (~5), which cuts against the KISS rule and the
+  per-session tool budget — the counter-argument is that all five are
+  currently being written by hand at call sites instead.
+
+  UNBLOCKS: agents stop writing Graph-direct scripts for routine mail;
+  the compose path becomes safe to hand to a less careful agent; the
+  signature stops being copy-pasted (and stops being wrong).
+
+  FORECLOSES: nothing structurally. Delays B/C/D by its duration.
+
+  ## OPTION B — Unblock transcripts (CKM-30)
+
+  WHAT: you flip the Teams tenant switch (Teams admin centre > Meetings
+  > Meeting settings > Transcript API access, or
+  `Set-CsTeamsMeetingConfiguration -EnableGraphTranscriptAccess $true`),
+  we live-verify the read path, release it. The second tenant — where
+  the meetings actually are (125 online meetings vs 1) — additionally
+  needs an interactive login and its own consent.
+
+  COST: your hands, not an agent's, and the switch is TENANT-WIDE: it
+  opens transcript access to any app consented in that tenant, not just
+  ours. That is why it was proposed rather than run on 2026-08-01. Then
+  ~one session to verify and ship.
+
+  UNBLOCKS: the largest genuinely NEW capability on the board — meeting
+  content landing in repos the same way `export_message` lands
+  correspondence. Post-consent it covers meetings you merely ATTENDED,
+  not just organised, which is most of the value.
+
+  FORECLOSES: nothing technically; it does widen tenant exposure by one
+  policy, and that is not trivially reversible in perception even if it
+  is one command to undo.
+
+  ## OPTION C — Start the client-tenant clock (CKM-31)
+
+  WHAT: no engineering. Open the partner-program account, get the domain
+  verified, submit publisher verification on a NEW multi-tenant,
+  delegated-only, read-only app registration, and finish the consent
+  one-pager (draft already in git-ignored `tmp/`).
+
+  COST: mostly forms and your identity, plus an unbounded vetting wait —
+  which is exactly the argument for starting it rather than scheduling
+  it. Near-zero agent time.
+
+  UNBLOCKS: everything ckm365 does, pointed at a CLIENT tenant. Without
+  publisher verification a multi-tenant app cannot be user-consented in
+  a client tenant at all, so this gates the entire client-facing story,
+  including transcripts of client meetings.
+
+  FORECLOSES: nothing. Not starting it forecloses the earliest possible
+  date the client story can exist, permanently and silently.
+
+  ## OPTION D — Freeze at 2.5.1, absorb the friction
+
+  WHAT: declare the package feature-complete for internal use. Spend the
+  effort on a `docs/` compose cookbook instead — the exact
+  seed→revise→attach→verify recipe, pointing at `docs/graph-direct.md`,
+  which is already the sanctioned escape hatch for missing tooling.
+
+  COST: near zero now. The 2026-08-18 friction recurs on every future
+  outbound mail, and each recurrence is a fresh hand-rolled HTML splice
+  with a fresh chance of dropping a quote, a recipient or a signature.
+
+  UNBLOCKS: attention for other repos.
+
+  FORECLOSES: nothing permanently, but it makes the escape hatch the
+  main road, and the escape hatch has no gating — a Graph-direct script
+  bypasses the write/send tiers entirely. Worth naming plainly: the
+  three-tier gating is load-bearing security, and the more real work
+  routes around it, the less it means.
+
+  ---
+
+  ## RECOMMENDATION
+
+  A now, and C in parallel today. A is the only option with fresh
+  first-hand evidence behind it — eight scripts in one evening is the
+  package telling us where it ends, and the fix is small, needs nothing
+  from you, touches no tenant, and adds no consent. C belongs alongside
+  it precisely because it is NOT engineering: it is a form and a wait,
+  the wait is the only unbounded clock in the whole plan, and every week
+  it is not started is a week added to the client story. B is real value
+  but it is gated on a tenant-wide switch and on you being at a keyboard
+  in the right tenant — take it the moment you actually want a meeting
+  transcript, not before. D is the honest do-nothing and it is ranked
+  last only because the friction it accepts is already recurring rather
+  than hypothetical.
+
+  ## OPEN QUESTIONS (answer in this ticket, no rush)
+
+  1. **Option B's switch**: are you willing to enable Graph transcript
+     access tenant-wide, knowing it applies to every consented app in
+     that tenant and not only ours? If not, CKM-30 should move to
+     `blocked` and stop looking like work in flight.
+  2. **Signature source** (Option A): should the canonical signature
+     live per-profile in local `profiles.toml` (off-repo, we control the
+     HTML), or should we try to pull your real Outlook roaming
+     signature from Graph? The local one is honest and works today; the
+     roaming one avoids two copies drifting.
+  3. **Identity count**: you mentioned four signed-in identities. Local
+     config carries THREE profiles (two delegated, one app-only). Is
+     there a fourth that should become a profile, and should any of them
+     carry `allow_send = false`? Only one currently does.
+  4. **Policy**: should "agents do not hand-roll Graph for mail WRITES"
+     become a rule in CLAUDE.md once Option A lands, with
+     `docs/graph-direct.md` remaining sanctioned for reads only? That
+     turns A from a convenience into a boundary.
+  5. **Tool-count budget**: Option A adds ~5 tools to the mail preset.
+     Fine, or do you want them behind a separate preset to keep the
+     default session small?
+dependencies: []
+parent_id: null
+priority: high
+issue_type: task
+tags: [decision, options, roadmap, mail, field-evidence]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-19T15:40:00Z'
+  by: claude
+  details: 'Issue created in todo. Filed from a phone request for options
+    (not a plan) on next steps for ckm365. State reconstructed from the
+    repo: git log through v2.5.1 (2026-08-11), the board (CKM-30 in doing
+    but blocked on a tenant switch; CKM-18/28/31 in backlog), AGENTS.md
+    current-state section, and the tool surface in src/ckm365/tools/. The
+    new input is field evidence: eight git-ignored tmp/ scripts dated
+    2026-08-18 from a real outbound reply-with-attachment cycle, each one
+    bypassing the tool surface for Graph-direct calls. Gaps they expose:
+    no way to revise a reply body without losing the quoted history, no
+    signature concept, no discard_draft, no remove_attachment, reply vs
+    reply-all fixed at creation, and post-send verification hand-rolled
+    three times. Names and addresses deliberately omitted — PUBLIC repo.
+    Four options laid out (compose hardening / transcript unblock /
+    client-tenant lead time / freeze) with a recommendation of A plus C,
+    and five open questions for seanwy. No code changed, nothing
+    committed, no mail sent.'
+  event: created
+- at: '2026-08-20T00:07:00Z'
+  by: omni
+  event: note
+  details: '[relayed by voice callback] Decision from seanwy by phone, 00:04 AEST:
+    OPTION A APPROVED, AND ONLY A. Verbatim: "that''s approved A, I mean", then
+    after hearing B and D re-read, "No, let''s just get it working on option A
+    for Alpha for now" and "the rest of them can wait". This DECLINES the
+    ticket''s "A now, C in parallel" recommendation — C (publisher verification)
+    is the option with the unbounded external clock, so the cost of deferring it
+    accrues silently and is worth re-raising when he is off the road. B and D
+    are not approved. He also said he did not understand "board" in the spoken
+    summary of B — that was the caller-side paraphrase, not this ticket''s
+    wording; B still reads as CKM-30 transcripts. seanwy asked to be called back
+    when this work has an update on next steps. Full capture:
+    omni/voice/tmp/CALL_CAPTURE_2026-08-20_0000.md'
+- at: '2026-08-20T02:20:00Z'
+  by: claude
+  event: moved
+  details: 'todo -> done. The decision this ticket existed to get has been made and
+    acted on: OPTION A only (see the 00:07 note above). A is now its own issue,
+    CKM-42, per this ticket''s own rule that the chosen option becomes an issue —
+    filed and built in the same session. B stays with CKM-30 (doing, blocked on a
+    tenant-wide switch seanwy has not agreed to), C stays with CKM-31 (backlog,
+    NOT started — it is the only unbounded external clock on the board and the
+    cost of deferring it accrues silently, so it is worth re-raising when he is
+    off the road), D is declined by implication. Open questions 1-5 above are
+    still unanswered; 2, 4 and 5 were answered PROVISIONALLY by CKM-42''s
+    implementation (local per-profile signature, no CLAUDE.md rule written, tools
+    in the existing mail preset) and are carried forward there for seanwy to
+    confirm or overrule.'
+version: 1
