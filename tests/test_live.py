@@ -194,6 +194,69 @@ def test_export_message_both_formats(ctx):
         _delete(ctx, "messages", draft.id)
 
 
+def test_compose_loop_revise_verify_remove_discard(ctx):
+    """CKM-42 against real Graph: the fence must survive Graph's PATCH
+    round trip, a revision must replace our text while the quoted history
+    and the signature stay put, and discard_draft must leave no residue."""
+    newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
+    if not newest:
+        pytest.skip("mailbox has no messages to reply to")
+    first, second = "ckm365-live-first-draft", "ckm365-live-second-draft"
+    signature = bool(ctx.profile(ACCOUNT).signature_html)
+    draft = mail.create_reply_draft(ctx, newest[0].id, f"<p>{first}</p>",
+                                    mailbox=MAILBOX)
+    discarded = False
+    try:
+        before = mail.verify_message(ctx, draft.id, mailbox=MAILBOX)
+        assert before["boundary"] == "fence"  # our comments survived Graph
+        assert first in before["text"] and before["quoted_thread"]
+        assert before["recipients"] >= 1 and before["is_draft"]
+        assert before["signature"] is signature
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "live-compose.txt"
+            sample.write_text("live compose loop")
+            added = mail.add_attachment(ctx, draft.id, str(sample),
+                                        mailbox=MAILBOX)
+
+        mail.revise_draft(ctx, draft.id, f"<p>{second}</p>", mailbox=MAILBOX)
+        after = mail.verify_message(ctx, draft.id, mailbox=MAILBOX)
+        assert second in after["text"] and first not in after["text"]
+        assert after["quoted_thread"] and after["boundary"] == "fence"
+        assert after["signature"] is signature
+        assert any(a["attachment_id"] == added.id
+                   for a in after["attachments"])
+
+        assert mail.remove_attachment(ctx, draft.id, attachment_id=added.id,
+                                      mailbox=MAILBOX)["removed"]
+        assert not any(a.id == added.id for a in
+                       mail.list_attachments(ctx, draft.id, mailbox=MAILBOX))
+        assert mail.discard_draft(ctx, draft.id,
+                                  mailbox=MAILBOX)["discarded"]
+        discarded = True
+    finally:
+        if not discarded:
+            _delete(ctx, "messages", draft.id)
+    with pytest.raises(GraphError) as err:
+        mail.get_message(ctx, draft.id, mailbox=MAILBOX)
+    assert err.value.status == 404  # residue check
+
+
+def test_compose_loop_guards_refuse_delivered_mail(ctx):
+    """discard_draft and remove_attachment must be as draft-only as
+    update_draft — the offline mocks assert it, this proves Graph agrees."""
+    newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
+    if not newest:
+        pytest.skip("mailbox has no messages")
+    for call in (lambda: mail.discard_draft(ctx, newest[0].id, mailbox=MAILBOX),
+                 lambda: mail.revise_draft(ctx, newest[0].id, "<p>x</p>",
+                                           mailbox=MAILBOX),
+                 lambda: mail.remove_attachment(ctx, newest[0].id, name="x",
+                                                mailbox=MAILBOX)):
+        with pytest.raises(ValueError, match="non-draft"):
+            call()
+
+
 def test_delivered_messages_are_untouchable(ctx):
     newest = mail.list_messages(ctx, top=1, mailbox=MAILBOX)
     if not newest:

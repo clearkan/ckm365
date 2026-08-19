@@ -3,6 +3,81 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.6.0] — 2026-08-19
+
+Closes the compose → send → verify loop (CKM-42, option A of CKM-41).
+Five thin tools and one profile key, aimed squarely at the eight
+Graph-direct scripts a real outbound cycle needed on 2026-08-18. No new
+Graph scope, no consent prompt, no tenant-wide operation.
+
+### Added
+- **`revise_draft`** (write tier) — rewrite the text YOU wrote in a draft
+  and keep the quoted history and the signature. Draft bodies composed by
+  ckm365 are now FENCED with HTML comments
+  (`<!--ckm365:body-->` / `<!--ckm365:signature-->`, invisible in every
+  mail client), and `revise_draft` replaces what is inside the body fence.
+  On an unfenced draft — written in Outlook, or created before this
+  version — it inserts at the top of `<body>` and fences that, so the next
+  revision replaces properly. Caller HTML containing a marker is refused,
+  so the fence cannot be forged from the inside.
+- **`signature_html`** on a profile in `profiles.toml` (max 8 KB, TOML
+  multi-line literal) — appended below your text by `create_reply_draft`,
+  `create_forward_draft` and `create_draft`, in its own fence, so revising
+  the text above never disturbs it. `signature=False` skips it for one
+  call. Local by design: Outlook's roaming signature would need
+  `MailboxSettings.Read`, a scope this app deliberately never requests.
+- **`discard_draft`** (write tier) — throw away a draft, refusing anything
+  that is not one. Graph moves a deleted message to Deleted Items rather
+  than purging it, so it stays recoverable; `move_message`'s refusal to
+  delete delivered mail is unchanged. Switching a reply to a reply-all is
+  discard + `create_reply_draft(reply_all=True)`, since Graph fixes the
+  recipients when it seeds the draft.
+- **`remove_attachment`** (write tier) — `add_attachment`'s inverse,
+  drafts only, selecting by `attachment_id` or exact `name` with the same
+  never-a-silent-first-match rule as `download_attachment`. Any kind can
+  be removed (removal needs no bytes, unlike downloading).
+- **`verify_message`** (READ tier) — the pre-send check, in one call:
+  recipients, attachment names/sizes/kinds/inline flags, whether the
+  quoted thread survived, whether the signature is still there, the text
+  you wrote as plain text (capped at 4000 chars), and the non-ASCII
+  characters in it with counts — the smart-quote check, reported and never
+  corrected. `boundary` says whether that text was told apart exactly
+  (`fence`) or by falling back to the signature/quote markers. Works on
+  the sent copy as well as the draft.
+
+### Changed
+- `update_draft`'s docstring now says plainly that `body_html` replaces
+  the WHOLE body and points at `revise_draft`; it remains the tool for
+  subject and recipients.
+- `require_draft` takes the caller's `$select` and headers, so the
+  draft guard doubles as the read-before-write instead of costing a
+  second GET.
+- `_select_attachment` no longer refuses non-file attachments; that rule
+  moved to the download path, where it belongs.
+- `scripts/draft-cycle-smoke.py` walks the whole loop (seed → verify →
+  attach → revise → remove → discard) through the tools, and no longer
+  deletes its draft with a raw Graph `DELETE`.
+- `docs/graph-direct.md` opens with "check there is not already a tool"
+  and a table of the hand-rolled calls that now have one. Part of the
+  2026-08-18 friction was DISCOVERABILITY, not missing capability: one
+  script archived a message from `/$value` when `export_message` already
+  did that job better.
+
+### Verified
+- 153 offline tests pass (19 new in `tests/test_mail_compose.py`: fenced
+  revision keeps quote and signature, unfenced fallback, forged-marker
+  refusal, If-Match on revision, draft-only guards on discard and
+  attachment removal, ambiguous-name refusal, and every field
+  `verify_message` reports including the inline-attachment case Graph
+  reports as `hasAttachments: false`).
+- Two live tests added to `tests/test_live.py` (the compose loop end to
+  end with a residue check, and the draft-only guards against real Graph)
+  — env-gated as always, and NOT yet run.
+- NOT yet live-verified: neither those nor
+  `scripts/draft-cycle-smoke.py` has been run against a real mailbox.
+  Offline mocks have missed real Graph behaviour before — run it before
+  relying on the loop.
+
 ## [2.5.1] — 2026-08-11
 
 Housekeeping only: no tool, signature, or behaviour changed.

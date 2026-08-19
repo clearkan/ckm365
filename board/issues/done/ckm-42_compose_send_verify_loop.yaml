@@ -1,0 +1,158 @@
+id: CKM-42
+title: Close the compose -> send -> verify loop (CKM-41 option A)
+column: done
+status: done
+created_at: '2026-08-20T02:25:00Z'
+updated_at: '2026-08-20T03:40:00Z'
+assignees: []
+description: |-
+  The build issue for OPTION A of CKM-41, approved by seanwy by phone at
+  00:04 on 2026-08-20 ("that's approved A" / "let's just get it working on
+  option A for Alpha for now" / "the rest of them can wait"). B, C and D are
+  explicitly deferred and nothing here touches them.
+
+  ## Why
+
+  Eight git-ignored `tmp/` scripts dated 2026-08-18 did a real outbound
+  reply-with-attachment cycle by dropping out of the tool surface and
+  calling Graph directly. CKM-41 records the evidence. The gaps they had to
+  work around:
+
+  1. Revising a reply body loses the quoted history (`update_draft` REPLACES
+     the body; the splice that inserts at the top of `<body>` was private to
+     `drafts._insert_top` and only reachable at CREATE time). Re-implemented
+     twice, the second time to preserve a signature block as well.
+  2. No signature concept — a ~700-byte HTML literal copy-pasted into two
+     scripts.
+  3. No `discard_draft` — raw DELETE on the message.
+  4. No `remove_attachment` — raw DELETE on the attachment.
+  5. Reply vs reply-all fixed at creation — switching meant deleting the
+     draft and re-seeding from `createReplyAll`.
+  6. Post-send verification hand-rolled three times (recipients, attachment
+     names/sizes, quoted thread survived, non-ASCII leakage in the new text).
+  7. Discoverability: the archive step used raw `/$value` when
+     `export_message` already does that job better.
+
+  ## Scope
+
+  Write tier and read tier only. NO new Graph scope, NO consent prompt, NO
+  tenant-wide operation — that is part of why A was chosen over B and C.
+
+  - `revise_draft` (write) — replace the text you wrote, keeping the quoted
+    history AND the signature.
+  - per-profile `signature_html` in `profiles.toml`, applied at draft
+    creation by `create_reply_draft` / `create_forward_draft` /
+    `create_draft`.
+  - `discard_draft` (write) — refuses non-drafts; Graph DELETE on a message
+    moves it to Deleted Items, so it stays reversible.
+  - `remove_attachment` (write) — the inverse of `add_attachment`, drafts
+    only.
+  - `verify_message` (read) — the assertions the scripts kept re-deriving.
+  - docs pass so `export_message` is found before `/$value` is.
+dependencies: []
+parent_id: CKM-41
+priority: high
+issue_type: feature
+tags: [mail, compose, write-tier, ckm-41-option-a]
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-08-20T02:25:00Z'
+  by: claude
+  event: created
+  details: 'Issue created in doing. Spawned from CKM-41 option A on seanwy''s
+    phone approval (00:04, 2026-08-20), per CKM-41''s rule that the chosen
+    option becomes its own issue. Scope is exactly option A as written there;
+    the gap list is the field evidence from the eight tmp/ scripts of
+    2026-08-18. Names and addresses deliberately omitted — PUBLIC repo.'
+- at: '2026-08-20T03:40:00Z'
+  by: claude
+  event: moved
+  details: 'doing -> done. Built and released as v2.6.0 (VERSION, pyproject,
+    __init__, CHANGELOG). FIVE tools, all thin wrappers over calls the package
+    already made, no new Graph scope, no consent prompt, no tenant-wide
+    operation: (1) write-tier revise_draft — draft bodies composed by ckm365
+    are now FENCED with HTML comments (common.BODY_MARK/SIGNATURE_MARK,
+    invisible in every mail client) and revise_draft replaces what is inside
+    the body fence, so the quoted history and the signature survive any number
+    of revisions; on an unfenced draft (Outlook-composed, or pre-2.6.0) it
+    inserts at the top of <body> and fences that, and caller HTML carrying a
+    marker is refused so the fence cannot be forged. (2) signature_html per
+    profile in profiles.toml (max 8 KB), applied below the text by
+    create_reply_draft/create_forward_draft/create_draft, signature=False to
+    skip. (3) write-tier discard_draft, draft-only; Graph DELETE moves to
+    Deleted Items, so it stays recoverable and move_message''s no-deletion
+    stance is untouched. (4) write-tier remove_attachment, add_attachment''s
+    inverse, drafts only, same never-a-silent-first-match selection as
+    download_attachment (the fileAttachment-only rule moved to the download
+    path, since removal needs no bytes). (5) READ-tier verify_message —
+    recipients, attachments (always listed: Graph reports hasAttachments false
+    when the only attachments are inline), quoted-thread survival, signature
+    presence, the text you wrote as plain text capped at 4000 chars, and the
+    non-ASCII characters in it with counts; `boundary` says whether that text
+    was identified exactly (fence) or by falling back to markers. Plus the
+    docs pass: docs/graph-direct.md now opens with "check there is not already
+    a tool" and a table of hand-rolled calls that have one, export_message
+    included. scripts/draft-cycle-smoke.py now walks the whole loop through
+    the tools instead of a raw DELETE.
+
+    DELIBERATELY NOT BUILT: a tool to switch a draft between reply and
+    reply-all. Graph fixes recipients when it seeds the draft; anything that
+    "switched" one would have to patch recipients onto an existing reply and
+    would silently drop the ones Graph derived. discard_draft +
+    create_reply_draft(reply_all=True) is the honest path, is now two tool
+    calls instead of two raw Graph calls, and is documented on both tools.
+
+    VERIFIED: 153 offline tests pass (134 before, 19 new in
+    tests/test_mail_compose.py), ruff clean over src/tests/scripts. Two live
+    tests were also added to tests/test_live.py (compose loop end to end with
+    a residue check; draft-only guards against real Graph) — env-gated, and
+    NOT RUN. NOT LIVE VERIFIED — AGENTS.md step 4 is outstanding: nothing in this session ran
+    against a real mailbox (seanwy was driving and the session was told not to
+    send or touch live mail). scripts/draft-cycle-smoke.py <profile> is the
+    check to run, it sends nothing and leaves zero residue. Offline mocks have
+    missed real Graph behaviour in this repo before, so treat the loop as
+    unproven until it has run. Nothing committed or pushed — seanwy commits.'
+- at: '2026-08-20T03:40:00Z'
+  by: claude
+  event: note
+  details: 'OPEN QUESTIONS FOR SEANWY (carried from CKM-41, plus what this
+    build decided provisionally):
+
+    1. SIGNATURE SOURCE (CKM-41 q2): implemented as local per-profile
+    signature_html in profiles.toml, because the roaming Outlook signature
+    would need MailboxSettings.Read — a scope this app deliberately never
+    requests, and asking for it would have broken the "no new consent"
+    condition A was chosen under. If you want the roaming one, that is a new
+    scope decision, not a code change. Nothing is configured yet: your
+    signature still has to be pasted into ~/.config/ckm365/profiles.toml once
+    (off-repo, PUBLIC repo here). Want that done for you next session?
+
+    2. TOOL-COUNT BUDGET (CKM-41 q5): the five went into the EXISTING mail
+    preset, so a --preset mail session grows from 24 to 28 tools with
+    --write --enable-send. Say the word if you want them behind a separate
+    preset instead.
+
+    3. POLICY (CKM-41 q4): "agents do not hand-roll Graph for mail WRITES" was
+    NOT written into CLAUDE.md — that is a boundary change and it is yours to
+    make. docs/graph-direct.md now leads with the check-for-a-tool table,
+    which is the soft version of the same thing.
+
+    4. CKM-41 q1 (tenant-wide transcript switch) and q3 (fourth identity /
+    allow_send) are untouched and still open on CKM-41.
+
+    5. Option C (CKM-31, publisher verification) is still not started. It is
+    the only unbounded external clock on the board — worth 10 minutes when you
+    are off the road.'
+- at: '2026-08-20T00:26:00Z'
+  by: omni
+  event: note
+  details: '[relayed by voice callback] seanwy approved committing and pushing this
+    work. Verbatim, on an outbound call at 00:24 placed to honour his "call me when
+    there is an update" condition: "Okay, it can deploy." -> asked back "You want it
+    committed and pushed?" -> "Yes, commit and push." The call fork does not commit;
+    this is Omni''s to carry out. Note the honest gap stands at the time of approval:
+    no live verification had been run (nothing sent, no real mailbox touched), and
+    his signature is still not in ~/.config/ckm365/profiles.toml. He was told the
+    work was built and tested before he approved.'
+version: 1

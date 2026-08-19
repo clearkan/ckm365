@@ -4,12 +4,14 @@
 every tool is re-exported here and the split below is an implementation
 detail — import from this package, never from its submodules.
 
-    common.py       paths, Prefer headers, the draft guard, /$batch fan-out
+    common.py       paths, Prefer headers, the draft guard, the compose
+                    fence, /$batch fan-out
     disk.py         writing mail content to LOCAL disk, safely
     read.py         listings, one message, curated headers, folders, counts
-    attachments.py  list metadata, stream bytes out, put a file in
+    attachments.py  list metadata, stream bytes out, put a file in, take one off
     export.py       one message to a file (OKF .md record, or raw .eml)
-    drafts.py       reply/forward/update/create, and the one send
+    drafts.py       reply/forward/update/revise/create/discard, and the one send
+    verify.py       what a composed message actually says, before it goes
     triage.py       read state, flags, filing — batched metadata writes
 
 Two invariants hold across all of it:
@@ -30,19 +32,23 @@ of them takes a LIST of ids, reports per-id outcomes, and never lets one
 404 strand the rest of the batch.
 """
 
-from .attachments import add_attachment, download_attachment, list_attachments
+from .attachments import (add_attachment, download_attachment,
+                          list_attachments, remove_attachment)
 from .drafts import (create_draft, create_forward_draft, create_reply_draft,
-                     send_draft, update_draft)
+                     discard_draft, revise_draft, send_draft, update_draft)
 from .export import export_message
 from .read import (get_message, get_message_headers, group_by_sender,
                    list_mail_folders, list_messages)
 from .triage import (complete_flag, flag, mark_read, mark_unread, move_message,
                      unflag)
+from .verify import verify_message
 
 __all__ = [
     "add_attachment", "complete_flag", "create_draft", "create_forward_draft",
-    "create_reply_draft", "download_attachment", "export_message", "flag",
-    "get_message", "get_message_headers", "group_by_sender",
-    "list_attachments", "list_mail_folders", "list_messages", "mark_read",
-    "mark_unread", "move_message", "send_draft", "unflag", "update_draft",
+    "create_reply_draft", "discard_draft", "download_attachment",
+    "export_message", "flag", "get_message", "get_message_headers",
+    "group_by_sender", "list_attachments", "list_mail_folders",
+    "list_messages", "mark_read", "mark_unread", "move_message",
+    "remove_attachment", "revise_draft", "send_draft", "unflag",
+    "update_draft", "verify_message",
 ]

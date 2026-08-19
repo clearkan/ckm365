@@ -19,6 +19,16 @@ description = "Tenant A work tenant (shared mailbox: ops@)"  # shown to agents
 #                     # would otherwise be guessed — a mail.flag due date with
 #                     # no offset. Unset means such a call must pass timezone=
 #                     # explicitly; it is never silently treated as UTC.
+# optional: this mailbox's sign-off, appended below your text by
+# create_reply_draft / create_forward_draft / create_draft (pass
+# signature=False to skip it on one call) and preserved by revise_draft.
+# A TOML multi-line literal (''') holds HTML unescaped. Local by
+# design: Outlook's roaming signature would need MailboxSettings.Read, a
+# scope this app deliberately never requests. Max 8 KB.
+#signature_html = '''
+#<p style="margin:0"><b>Ops</b> — Example Pte Ltd</p>
+#<p style="margin:0"><a href="https://example.com">example.com</a></p>
+#'''
 
 [profiles.tenant-b]
 tenant_id = "00000000-0000-0000-0000-000000000000"

@@ -1,9 +1,12 @@
-"""Attachments: list metadata, get the bytes out, put a file in.
+"""Attachments: list metadata, get the bytes out, put a file in, take one
+back off.
 
 download_attachment (read tier) streams Graph's $value straight to disk
 so the bytes never enter an agent's context; add_attachment (write tier)
-is the inverse and refuses non-drafts. Only a fileAttachment has bytes —
-itemAttachment and referenceAttachment are refused with the reason.
+is the inverse and refuses non-drafts, as does remove_attachment. Only a
+fileAttachment has bytes — itemAttachment and referenceAttachment are
+refused with the reason by the download path (removal does not care what
+kind it is taking off).
 """
 
 import base64
@@ -46,7 +49,13 @@ def list_attachments(ctx: Ctx, message_id: str, *, account: str | None = None,
 
 def _select_attachment(items: list[Attachment], attachment_id: str | None,
                        name: str | None) -> Attachment:
-    """Pick exactly one attachment, or raise saying why none was picked."""
+    """Pick exactly one attachment, or raise saying why none was picked.
+
+    Shared by download_attachment and remove_attachment: an ambiguous name
+    is an error listing the discriminators, never a silent first match.
+    The fileAttachment-only rule belongs to the download path alone
+    (_require_bytes), since removing an itemAttachment is perfectly sane.
+    """
     if attachment_id:
         matches = [a for a in items if a.id == attachment_id]
         if not matches:
@@ -68,7 +77,11 @@ def _select_attachment(items: list[Attachment], attachment_id: str | None,
             raise ValueError(
                 f"{len(matches)} attachments on this message share that name — "
                 f"pass attachment_id instead: {candidates}")
-    found = matches[0]
+    return matches[0]
+
+
+def _require_bytes(found: Attachment) -> Attachment:
+    """Only a fileAttachment has bytes on disk to save."""
     if found.kind and found.kind != "fileAttachment":
         raise ValueError(
             f"this attachment is a {found.kind}, which has no file bytes to "
@@ -117,8 +130,8 @@ def download_attachment(ctx: Ctx, message_id: str, dest_path: str, *,
     if not (attachment_id or name):
         raise ValueError("pass attachment_id (from list_attachments) or name")
     g, mb = ctx.target(account, mailbox)
-    found = _select_attachment(attachments_of(g, mb, message_id),
-                               attachment_id, name)
+    found = _require_bytes(_select_attachment(
+        attachments_of(g, mb, message_id), attachment_id, name))
     dest = write_target(dest_path, found.name)
     written = write_atomic(dest, lambda part: g.download(message_path(
         mb, message_id,
@@ -160,3 +173,46 @@ def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
     }
     created = g.post(path + "/attachments", json=payload)
     return Attachment.from_graph(created)
+
+
+def remove_attachment(ctx: Ctx, message_id: str, *,
+                      attachment_id: str | None = None,
+                      name: str | None = None, account: str | None = None,
+                      mailbox: str | None = None) -> dict:
+    """Take an attachment back off a DRAFT — the inverse of add_attachment.
+
+    Drafts only, so this can never strip a file off delivered mail. Choose
+    the attachment with attachment_id (from list_attachments — always
+    unambiguous) or with `name`, which must match EXACTLY; two attachments
+    sharing a name is an error listing their ids, never a silent first
+    match. Removal is permanent for that copy: nothing else holds the
+    bytes, so download_attachment it first if it might be wanted.
+
+    Any kind can be removed (file, item or reference) — unlike downloading,
+    which needs real bytes. Watch the INLINE ones: list_attachments' is_inline
+    flags the images a signature or a pasted screenshot references by cid,
+    and removing one leaves a broken image in the body rather than freeing
+    space. Removing a normal file attachment is the ordinary case — swapping
+    a stale revision for a new one is remove_attachment then add_attachment.
+
+    Returns {"removed": true, "message_id", "attachment_id", "name",
+    "size", "is_inline"}.
+    """
+    ctx.require_write()
+    if not (attachment_id or name):
+        raise ValueError("pass attachment_id (from list_attachments) or name")
+    g, mb = ctx.target(account, mailbox)
+    path = message_path(mb, message_id)
+    require_draft(g, path, "remove an attachment from")
+    found = _select_attachment(attachments_of(g, mb, message_id),
+                               attachment_id, name)
+    g.request("DELETE",
+              path + f"/attachments/{_seg(found.id, 'attachment_id')}")
+    # ids and sizes only — an attachment NAME can carry the counterparty
+    # and the project it came from, so it stays out of the log.
+    log.info("tool=remove_attachment mailbox=%r message_id=%r "
+             "attachment_id=%r size=%d", mb, message_id, found.id[:24],
+             found.size)
+    return {"removed": True, "message_id": message_id,
+            "attachment_id": found.id, "name": found.name,
+            "size": found.size, "is_inline": found.is_inline}

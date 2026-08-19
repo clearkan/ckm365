@@ -1,9 +1,12 @@
-"""Plumbing every mail module shares: paths, headers, /$batch fan-out.
+"""Plumbing every mail module shares: paths, headers, /$batch fan-out,
+and the compose-region fence.
 
 Nothing here is a tool. The batch helpers are the convention the triage
 tools and get_message_headers are built on — one Graph call per message
 id, 20 to a round trip, per-id outcomes, and one failure never stranding
-the rest of the batch.
+the rest of the batch. The fence helpers are what let drafts.py rewrite
+its own text without touching the quoted history, and verify.py find that
+text again afterwards.
 """
 
 import logging
@@ -27,12 +30,59 @@ def message_path(mailbox: str, message_id: str, suffix: str = "") -> str:
 
 
 def require_draft(g: Graph, path: str, verb: str,
-                  select: str = "id,isDraft") -> dict:
-    """The draft-only invariant lives here: fetch and refuse non-drafts."""
-    current = g.get(path, params={"$select": select})
+                  select: str = "id,isDraft",
+                  headers: dict[str, str] | None = None) -> dict:
+    """The draft-only invariant lives here: fetch and refuse non-drafts.
+
+    Callers that go on to PATCH the message pass the wider `select` they
+    need (and prefer("html") for a body), so the guard read doubles as the
+    read-before-write and no second GET is needed.
+    """
+    current = g.get(path, params={"$select": select}, headers=headers)
     if not current.get("isDraft"):
         raise ValueError(f"refusing to {verb} a non-draft message")
     return current
+
+
+# --- the compose region (CKM-42) -------------------------------------------
+#
+# A reply draft is three things stacked: OUR text, then (optionally) the
+# profile signature, then the quoted history Graph seeded. Only the first
+# is ours to rewrite, and HTML alone cannot tell the three apart — the
+# 2026-08-18 scripts guessed the boundary from a literal phrase in the
+# signature, which works exactly once. So whatever writes a draft body
+# FENCES what it wrote with HTML comments, and revise_draft/verify_message
+# read the fence back. Comments render as nothing in every mail client and
+# survive Graph's PATCH round trip; caller HTML carrying one is refused, so
+# the fence can never be forged from the inside.
+
+BODY_MARK = "ckm365:body"
+SIGNATURE_MARK = "ckm365:signature"
+
+
+def fence(mark: str, html: str) -> str:
+    return f"<!--{mark}-->{html}<!--/{mark}-->"
+
+
+def fenced_region(content: str, mark: str) -> tuple[int, int] | None:
+    """(start, end) of what sits INSIDE a fence, or None when unfenced."""
+    opener, closer = f"<!--{mark}-->", f"<!--/{mark}-->"
+    start = (content or "").find(opener)
+    if start < 0:
+        return None
+    end = content.find(closer, start + len(opener))
+    return None if end < 0 else (start + len(opener), end)
+
+
+def unfenced(html: str | None, name: str) -> str:
+    """Refuse caller HTML that carries our own markers."""
+    value = html or ""
+    if "<!--ckm365:" in value or "<!--/ckm365:" in value:
+        raise ValueError(
+            f"{name} must not contain ckm365's compose markers "
+            "(<!--ckm365:...-->): they fence the region revise_draft "
+            "rewrites, and a forged one would make that region ambiguous")
+    return value
 
 
 def batch_ids(message_ids: list[str]) -> list[str]:

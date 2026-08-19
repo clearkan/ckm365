@@ -13,8 +13,9 @@ from pathlib import Path
 _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
-                 "description", "allow_send", "timezone"}
+                 "description", "allow_send", "timezone", "signature_html"}
 _TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
+_MAX_SIGNATURE = 8192  # real HTML signatures measure a few hundred bytes
 AUTH_MODES = ("device_code", "client_credential")
 
 
@@ -32,6 +33,12 @@ class Profile:
     description: str = ""  # optional, surfaced to agents via list_accounts
     allow_send: bool = True  # false hard-caps the send tier for this profile,
                              # regardless of server flags (defense in depth)
+    signature_html: str | None = None  # this mailbox's sign-off, as an HTML
+                                 # fragment, applied at DRAFT CREATION and
+                                 # preserved by revise_draft (CKM-42). Local
+                                 # by design: Outlook's roaming signature
+                                 # would need MailboxSettings.Read, a scope
+                                 # this app deliberately never asks for.
     timezone: str | None = None  # this mailbox's zone (IANA or the Windows
                                  # name Graph also accepts). Used where a
                                  # bare date would otherwise be guessed —
@@ -61,6 +68,19 @@ class Profile:
             raise ConfigError(
                 f"profile {self.name!r}: allow_send must be a TOML boolean"
             )
+        if self.signature_html is not None:
+            # a non-string here would be spliced into an outgoing mail body
+            if not isinstance(self.signature_html, str):
+                raise ConfigError(
+                    f"profile {self.name!r}: signature_html must be a TOML "
+                    "string — a TOML multi-line literal (triple single "
+                    "quotes) holds real HTML unescaped")
+            if len(self.signature_html) > _MAX_SIGNATURE:
+                raise ConfigError(
+                    f"profile {self.name!r}: signature_html is "
+                    f"{len(self.signature_html)} chars, over the "
+                    f"{_MAX_SIGNATURE} cap — a signature is a sign-off, not a "
+                    "document")
         if self.timezone is not None and not _TZ_RE.fullmatch(self.timezone):
             raise ConfigError(
                 f"profile {self.name!r}: timezone must be a zone name like "
