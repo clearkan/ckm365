@@ -1,103 +1,108 @@
 id: CKM-46
-title: New-box setup has three silent failure modes and no write-path verification
+title: New-box setup has silent failure modes; doctor cannot see the MCP registration
 column: backlog
 status: backlog
 created_at: '2026-08-30T02:49:19Z'
-updated_at: '2026-08-30T02:49:19Z'
+updated_at: '2026-08-30T04:55:16Z'
 assignees: []
 description: |-
-  Filed from a real new-box provisioning run (Fedora 44,
-  2026-08-30): clone → uv sync → profiles → certs → MCP registration →
-  device-code login → verify. It worked, but three of the steps fail
-  SILENTLY when done exactly as the docs say, and there is no sanctioned
-  way to answer "can this box actually write mail?".
+  Filed from a real new-box provisioning run (Fedora 44, 2026-08-30):
+  clone -> uv sync -> profiles -> certs -> MCP registration -> device-code
+  login -> verify. It worked, but several documented steps fail SILENTLY
+  when followed exactly.
 
-  Each item below was verified against the source in this repo, not
-  assumed.
+  Items 1, 2, 4 and 5 are FIXED (docs commit, 2026-08-30). Item 3 — the
+  systemic one — remains, and is the whole reason this ticket stays open.
 
-  1. `.env.example` implies a dotenv loader that does not exist.
-     The repo ships `.env.example` documenting `CKM365_*` vars, and
-     `.gitignore` carefully ignores `.env`/`.env.*`. But nothing reads a
-     `.env` file: `config.py` calls `os.environ.get` directly, and there
-     is no dotenv dependency in `pyproject.toml` or `uv.lock`. An
-     operator who copies `.env.example` to `.env` and fills it in gets no
-     error and no credential — the app-only profile just keeps reporting
-     "set CKM365_<P>_CLIENT_SECRET or ...".
-     FIX: either load a real env file (repo `.env`, or a
-     `CKM365_ENV_FILE` pointing anywhere), or rename it to
-     `env.example.sh` with `export` lines and say in README Setup that it
-     must be sourced. Prefer the rename — it keeps the two-dep rule.
+  --- OPEN ---
 
-  2. The documented `claude mcp add` line drops app-only credentials.
-     README:168 and docs/onboarding.md:59 both register the server as
-     `claude mcp add --scope user ckm365 -- uv run ...` with no `-e`.
-     Claude Code does not source the operator's shell rc, so the
-     `ckm365 serve` child never sees `CKM365_<PROFILE>_CLIENT_CERT_PATH`
-     / `_THUMBPRINT` even when exported in `.bashrc` and the
-     CLI works fine. Net effect: `uv run ckm365 doctor` says all good,
-     the same profile is broken under MCP, and nothing says why.
-     FIX: show the `-e` form in both docs, e.g.
-       claude mcp add --scope user ckm365 \
-         -e CKM365_<P>_CLIENT_CERT_PATH=$HOME/.config/ckm365/certs/<p>.key.pem \
-         -e CKM365_<P>_CLIENT_CERT_THUMBPRINT=<sha1> \
-         -- uv run --directory /path/to/ckm365 ckm365 serve ...
-     Only a path and a thumbprint land in `.claude.json` — no key
-     material — so this is safe to document as the default.
-
-  3. `doctor` cannot see the gap in (2).
+  3. `doctor` cannot see the gap in item 2.
      `_doctor` (admin.py:343) validates the profiles file, token caches,
      login identity, consent tier and app-only credential material — all
-     from the CLI's own environment. It never inspects the Claude Code
-     MCP registration, which is the environment that actually matters
-     for the server. That is exactly why (2) is silent.
+     from the CLI's own environment. It never inspects the Claude Code MCP
+     registration, which is the environment that actually matters for the
+     server. That is precisely what makes item 2 silent: doctor passes in
+     your terminal while the same profile has no credential inside
+     `ckm365 serve`. Docs now warn about it; nothing detects it.
      FIX: `ckm365 doctor --mcp` — locate the `ckm365` entry in
-     `~/.claude.json`, and for every `client_credential` profile assert
-     the entry's `env` block carries that profile's cert/secret vars.
-     Warn, do not fail, when no registration exists (programmatic and
-     pydantic-ai consumers are legitimate).
+     `~/.claude.json`, and for every `client_credential` profile assert the
+     entry's `env` block carries that profile's cert/secret vars. Warn, do
+     not fail, when no registration exists — programmatic and pydantic-ai
+     consumers are legitimate and have no MCP entry at all.
+     Note the check can only ever be heuristic: the server also inherits
+     whatever environment Claude Code was launched with, which doctor
+     cannot observe from outside. So report it as "not declared on the
+     registration" (actionable, always true) rather than "missing"
+     (guessable, sometimes wrong).
 
-  4. No read+WRITE smoke test.
-     `scripts/live-smoke.py` is read-only by construction
-     (`Ctx.create(write=False, ...)`), and onboarding.md:52 offers it as
-     THE verification step. So the documented new-box checklist never
-     exercises the write tier, and "this box can send mail on my behalf"
-     stays unverified until the first real draft.
-     FIX: add `scripts/rw-smoke.py <profile>` — create_draft to self →
-     read it back from Drafts → discard_draft. Never sends (create_draft
-     cannot), and the discard is recoverable from Deleted Items. Keep
-     live-smoke's privacy contract: counts and truncated ids only, so
-     the output is safe to paste into an agent session. A working
-     implementation was written during this run and is available; it
-     passed on both device-code profiles of a two-tenant setup.
+  --- FIXED 2026-08-30 ---
 
-  5. README Setup's first command fails on a clean box.
-     README:159 is `cp profiles.example.toml ~/.config/ckm365/profiles.toml`
-     but `~/.config/ckm365/` does not exist yet on a fresh machine, so
-     the cp errors. onboarding.md has no mkdir either.
-     FIX: `mkdir -p -m 700 ~/.config/ckm365` first. The 700 matters —
-     `state_dir()` enforces 0700 on the state dir but nothing enforces
-     it on the config dir that holds `certs/`.
+  1. `.env.example` implied a dotenv loader that does not exist.
+     `config.py` calls `os.environ.get` directly and there is no dotenv
+     dependency in `pyproject.toml` or `uv.lock`, yet the repo shipped
+     `.env.example` and `.gitignore` carefully un-ignored it. An operator
+     who copied it to `.env` and filled it in got no error and no
+     credential.
+     FIXED: renamed to `env.example.sh` with `export` lines and a header
+     stating it must be SOURCED, where to put it (600, outside the repo),
+     and that the MCP server needs the same vars passed separately.
+     `.gitignore` updated.
 
-  Items 1, 2 and 5 are doc/UX bugs with one-line fixes. Item 3 is the
-  systemic one — it is what turns 2 from "annoying" into "silent". Item 4
-  is a genuine coverage gap.
+  2. The documented `claude mcp add` line dropped app-only credentials.
+     README and docs/onboarding.md both registered the server with no
+     `-e`. The `ckm365 serve` child only inherits what Claude Code itself
+     was launched with, so an export in `.bashrc` reaches it only when
+     Claude Code was started from a shell that sourced that rc — under a
+     desktop launcher, IDE or service manager it silently does not.
+     FIXED: README "Setup" and docs/app-only-setup.md §2 now show the `-e`
+     form and explain why, noting only a path and a thumbprint land in
+     `.claude.json`, never key material.
 
-  SUGGESTED SEQUENCE: 5 and 1 (trivial), then 4 (script exists), then 2
-  (docs) together with 3 (the check that keeps 2 fixed).
+  4. The setup checklist never exercised the write path.
+     ORIGINALLY FILED AS "no read+write smoke test exists" — that was
+     WRONG, and the correction matters more than the finding.
+     `scripts/draft-cycle-smoke.py` has existed since 2026-08-19 (CKM-42)
+     and is more thorough than what was proposed to replace it:
+     createReply -> verify -> attach -> revise -> remove attachment ->
+     discard, zero residue, never sends. It is listed in AGENTS.md's
+     working loop. The real defect was narrower: neither README "Setup"
+     nor onboarding.md's verify step mentioned it, so a new-box operator
+     following the docs verified only the read path and never learned the
+     write smoke existed.
+     FIXED: README "Setup" now runs `doctor`, `live-smoke.py` (labelled
+     READ) and `draft-cycle-smoke.py` (labelled WRITE).
+     LESSON: the filer read `live-smoke.py`, never listed `scripts/`, and
+     wrote a duplicate. Check what exists before proposing tooling.
+
+  5. README Setup's first command failed on a clean box.
+     `cp profiles.example.toml ~/.config/ckm365/profiles.toml` preceded any
+     mkdir, and `~/.config/ckm365/` does not exist on a fresh machine.
+     onboarding.md had no mkdir either.
+     FIXED: both now `mkdir -p -m 700 ~/.config/ckm365` first. The 700
+     matters — `state_dir()` enforces 0700 on the state dir, but nothing
+     enforced it on the config dir that holds `certs/`.
 dependencies: []
 parent_id: null
-priority: high
+priority: medium
 issue_type: task
-tags: [setup, onboarding, docs, mcp, app-only, testing]
+tags: [setup, onboarding, docs, mcp, app-only, doctor]
 requested_by: seanwy
 due_date: null
 history:
 - at: '2026-08-30T02:49:19Z'
   by: claude
-  details: Filed after provisioning ckm365 on a new box end to
-    end. All five findings verified against source — no dotenv loader in
-    pyproject/uv.lock/src, README:168 and onboarding.md:59 lack -e,
-    _doctor at admin.py:343 has no MCP check, live-smoke.py pins
-    write=False, README:159 cp precedes any mkdir.
+  details: Filed after provisioning ckm365 on a new box end to end. Five
+    findings on the documented setup path.
   event: created
-version: 1
+- at: '2026-08-30T04:55:16Z'
+  by: claude
+  details: 'Item 4 RETRACTED as originally worded: scripts/draft-cycle-smoke.py
+    already provides the write-path smoke (CKM-42, 2026-08-19) and is more
+    thorough than the replacement proposed. Reframed to the real, narrower
+    defect — the write smoke was absent from README Setup and onboarding.md.
+    Items 1, 2, 4, 5 fixed in the docs commit; offline suite green (153
+    passed, 15 skipped). Item 3 (doctor --mcp) left open and is now the
+    ticket''s remaining scope; priority high -> medium since the docs now
+    warn where they previously misled.'
+  event: updated
+version: 2

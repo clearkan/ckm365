@@ -156,9 +156,12 @@ What each one exists to stop you hand-rolling:
 
 ```sh
 uv sync
+mkdir -p -m 700 ~/.config/ckm365                          # holds profiles + certs/
 cp profiles.example.toml ~/.config/ckm365/profiles.toml   # then edit
 uv run ckm365 login <profile>                             # device-code flow
-uv run python scripts/live-smoke.py <profile>             # verify
+uv run ckm365 doctor                                      # config/login/consent
+uv run python scripts/live-smoke.py <profile>             # verify the READ path
+uv run python scripts/draft-cycle-smoke.py <profile>      # verify the WRITE path
 ```
 
 Register with Claude Code (pick the tier deliberately; `--scope user` makes
@@ -166,6 +169,20 @@ it available in every session):
 
 ```sh
 claude mcp add --scope user ckm365 -- uv run --directory /path/to/ckm365 \
+  ckm365 serve --preset mail,calendar --write --enable-send
+```
+
+App-only (`client_credential`) profiles need their credential in the
+**server's own** environment. Exporting it from your shell rc reaches the
+server only if Claude Code was itself started from a shell that sourced
+that rc, so pass it explicitly instead — only a path and a thumbprint land
+in `.claude.json`, never key material:
+
+```sh
+claude mcp add --scope user ckm365 \
+  -e CKM365_TENANT_A_APP_CLIENT_CERT_PATH=$HOME/.config/ckm365/certs/tenant-a-app.key.pem \
+  -e CKM365_TENANT_A_APP_CLIENT_CERT_THUMBPRINT=<sha1-thumbprint> \
+  -- uv run --directory /path/to/ckm365 \
   ckm365 serve --preset mail,calendar --write --enable-send
 ```
 

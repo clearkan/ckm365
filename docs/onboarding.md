@@ -28,7 +28,9 @@ own.
    ```
 
 2. **Create `~/.config/ckm365/profiles.toml`** with a single profile,
-   using the tenant's *existing* app registration:
+   using the tenant's *existing* app registration (the directory does not
+   exist yet on a fresh machine — `mkdir -p -m 700 ~/.config/ckm365`
+   first; it later holds `certs/` too):
 
    ```toml
    [profiles.tenant-a]
