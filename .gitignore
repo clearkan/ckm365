@@ -2,9 +2,11 @@
 tmp/
 
 # Secrets — env vars or OS keychain only, never in repo
+# (env.example.sh is the committed template and holds no values; a real
+# env file belongs outside the repo — see its header)
 .env
 .env.*
-!.env.example
+env.sh
 *.pem
 *.pfx
 *.key

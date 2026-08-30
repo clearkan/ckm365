@@ -167,6 +167,22 @@ export CKM365_TENANT_A_APP_CLIENT_CERT_THUMBPRINT=<sha1-hex-no-colons>
 (`CKM365_<PROFILE>_CLIENT_SECRET` is the fallback if a tenant forbids
 certs; prefer the cert.)
 
+**These have to reach the *server's* environment, not just your shell.**
+`ckm365` reads `os.environ` directly — nothing here parses a dotenv file
+— and an export in your shell rc reaches `ckm365 serve` only if Claude
+Code was itself started from a shell that sourced that rc. Under MCP the
+symptom is silent and confusing: `ckm365 doctor` passes from your
+terminal while the same profile has no credential inside the server. Pass
+them on the registration instead (a path and a thumbprint, never key
+material, land in `.claude.json`):
+
+```sh
+claude mcp add --scope user ckm365 \
+  -e CKM365_TENANT_A_APP_CLIENT_CERT_PATH=$HOME/.config/ckm365/certs/tenant-a-app.key.pem \
+  -e CKM365_TENANT_A_APP_CLIENT_CERT_THUMBPRINT=<sha1-hex-no-colons> \
+  -- uv run --directory /path/to/ckm365 ckm365 serve --preset mail,calendar
+```
+
 ## 5. Verification (only after steps 1–4, in this order)
 
 ```sh
