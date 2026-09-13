@@ -1,0 +1,59 @@
+id: CKM-47
+title: create_reply_draft body_html renders in the wrong font unless every paragraph carries the font style
+column: backlog
+status: backlog
+created_at: '2026-09-13T07:10:00Z'
+updated_at: '2026-09-13T07:10:00Z'
+assignees: []
+description: |-
+  Observed 13 Sep 2026 (client engagement repo, a named profile): a reply-all draft
+  created with create_reply_draft(body_html="<p>…</p><p>…</p>") renders in
+  Outlook with the wrong font (HTML default / Times) for the composed text,
+  while the quoted history below it is in Calibri 11pt. The same body, once
+  Outlook re-saves or sends it, gets normalised to
+  <p><span lang="EN-SG" style="font-size:11.0pt; font-family:&quot;Calibri&quot;,sans-serif">
+  on EVERY paragraph (see any sent copy). Bare <p> is therefore not enough:
+  the font must be applied per paragraph, not once on a wrapper — Outlook's
+  compose surface does not cascade a wrapper style into paragraphs the user
+  or a later revise_draft touches.
+
+  Also suspected (Sean): the mismatch is more visible when a draft is
+  revised (revise_draft prepends/replaces inside the fence) than when the
+  body is fully replaced, because the fenced region and the Graph-seeded
+  quote carry different default styles.
+
+  Proposed fix (either or both):
+  1. In create_reply_draft / create_forward_draft / create_draft /
+     revise_draft: if body_html contains <p> without an inline font-family,
+     wrap each paragraph's content as
+     <p style="margin:0 0 12pt 0"><span style="font-size:11.0pt;font-family:Calibri,sans-serif">…</span></p>
+     — matching Outlook's own normalisation — unless the caller passes
+     style_paragraphs=False. Keep the fence comments intact.
+  2. Make the font configurable per profile (profiles.toml: compose_font,
+     compose_size) with Calibri/11pt as the default, and document in the
+     tool docstring that bare <p> will NOT inherit the mailbox default font.
+
+  Verification: create a reply draft with three bare <p> paragraphs on a
+  Graph-seeded reply; open in Outlook desktop and OWA; the composed text and
+  the quoted history must render in the same face and size; revise_draft
+  the middle paragraph and re-check.
+
+  Workaround until fixed: callers apply
+  <p style="font-size:11.0pt;font-family:Calibri,sans-serif"> on every
+  paragraph themselves (recorded in the consuming repo's AGENTS.md, 13 Sep 2026).
+dependencies: []
+parent_id: null
+priority: medium
+issue_type: bug
+tags:
+- mail
+- drafts
+- outlook-rendering
+requested_by: seanwy
+due_date: null
+history:
+- at: '2026-09-13T07:10:00Z'
+  by: seanwy
+  details: Issue created in column backlog (filed from a live client reply-all draft, 13 Sep 2026)
+  event: created
+version: 1
