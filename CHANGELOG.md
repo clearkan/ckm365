@@ -3,6 +3,46 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [Unreleased]
+
+Documentation only — no code, no version bump, no schema change. Three
+Graph behaviours found the hard way during a live agent-persona outbound
+cycle, written down where the next agent will hit them.
+
+### Documented
+- **Graph will not let you set `In-Reply-To`/`References` on a draft**
+  (`400 InvalidInternetMessageHeader`, `x-` prefixes only) — so threading
+  cannot be added after a draft is created, and an agent persona replying
+  from a shared mailbox has no JSON route to a threaded reply at all.
+- **MIME import is the way through, and it does both jobs.** POSTing a
+  base64 RFC-5322 message to `mailFolders/drafts/messages` preserves
+  `From`, `Message-ID`, `In-Reply-To` and `References` verbatim, putting a
+  correctly-attributed, correctly-threaded draft in the shared mailbox's
+  own Drafts. New **Recipe 4** in `docs/graph-direct.md`. Related dead end
+  recorded too: importing the *counterparty's* message to reply to locally
+  fails, because imports arrive `isDraft: true` and `createReply` then
+  returns `400 ErrorInvalidReferenceItem`. Recipe 4 is the one recipe that
+  does NOT go through `Graph` — `request()` carries `json=` only — so it
+  spells out what that costs (the parsed `GraphError` and the 429
+  `Retry-After` retry; check the status code or every failure arrives as
+  `KeyError: 'id'`) and what it does not (the 503/504 budget never applied:
+  POST is excluded from `_IDEMPOTENT` by design, because a re-POSTed import
+  would leave two drafts).
+- **Encode MIME parts base64, never quoted-printable.** Python's
+  `EmailMessage` defaults to QP; its soft line breaks come back through
+  Exchange mangled, silently eating a character mid-word
+  (`set the brief` → `set =he brief`). Invisible in draft listings —
+  read the stored body back and assert on it.
+- **`export_message` hides inline images.** `hasAttachments` is false when
+  every attachment is inline, so the `.md` record carries no manifest and
+  leaves bare `[cid:...]` markers — it reads as complete while missing
+  what may be the entire content of the message (an annotated slide, a
+  pasted screenshot). Noted on the tool; fix tracked in CKM-44.
+
+Tool docstrings for `create_draft`, `create_reply_draft` and
+`export_message` carry the practical version of each, since those
+docstrings are what agents actually read.
+
 ## [2.6.0] — 2026-08-19
 
 Closes the compose → send → verify loop (CKM-42, option A of CKM-41).

@@ -147,6 +147,11 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
       on (email, inbound/outbound, attachments, bulk, auto-reply).
       Deterministic, so re-exporting the same message produces the same
       file and git shows no diff.
+      DIRECTION IS DERIVED FROM `sender == mailbox`, which is WRONG for
+      Send-As mail (CKM-45): a message sent as a shared mailbox lands in
+      the HUMAN's Sent Items with the shared mailbox as sender, so the
+      record comes out tagged `inbound`. Check the tag when exporting from
+      sentitems until this is fixed.
     - `.eml` — the raw MIME exactly as Graph serves it: full fidelity
       (every header, HTML part and attachment bytes inline), the right
       choice for an evidence archive. NOT reliably greppable: Exchange
@@ -155,6 +160,16 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
 
     Attachment BYTES are never written by either format — the record names
     them and carries their ids; download_attachment fetches them.
+
+    INLINE IMAGES ARE A BLIND SPOT in the `.md` record (CKM-44). A message
+    whose only attachments are inline reports hasAttachments=false, so the
+    record lists no manifest and the body keeps bare `[cid:...]` markers —
+    it reads as complete while missing the point of the message. This is
+    not rare: an annotated slide or a pasted screenshot is often the ENTIRE
+    content of a mail. After exporting, call list_attachments (it always
+    lists, inline included) and archive those bytes yourself; note that
+    inline images routinely share the name "image.png", so download them by
+    attachment_id, not by name.
 
     Read tier, no new consent. Same disk rules as download_attachment: an
     existing file is never overwritten, a failure leaves no residue, and

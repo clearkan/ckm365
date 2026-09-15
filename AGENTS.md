@@ -131,6 +131,28 @@ breaking change — `tests/test_offline.py` carries the import contract.
   attachments are INLINE (a signature image, a pasted screenshot), so
   never skip the attachment listing on the strength of that flag —
   `verify_message` always lists.
+- Graph REFUSES standard internet headers on a message PATCH: setting
+  `In-Reply-To`/`References` returns 400 `InvalidInternetMessageHeader`
+  ("should start with 'x-'"). Only `x-`-prefixed custom headers are
+  settable, so threading CANNOT be bolted onto a draft after creation.
+- ...but Graph PRESERVES those headers when a message arrives as MIME.
+  `POST /users/{mbx}/mailFolders/{folder}/messages` with
+  `Content-Type: text/plain` and a base64 RFC-5322 body keeps `From`,
+  `Message-ID`, `In-Reply-To` and `References` verbatim. That is the only
+  way today to put a correctly-threaded draft, authored by a SHARED
+  mailbox, into that shared mailbox's Drafts (CKM-45) — the counterparty's
+  message lives in the human's mailbox, so `createReply` has nothing to
+  seed from in the persona's.
+- A MIME-imported message arrives `isDraft: true` even when POSTed to a
+  non-Drafts folder, and `createReply` on it then fails with 400
+  `ErrorInvalidReferenceItem`. So importing the counterparty's message to
+  reply to it locally does NOT work; compose the reply MIME instead.
+- Encode MIME bodies BASE64, never quoted-printable. Python's
+  `EmailMessage` defaults to QP, and its soft line breaks (`=\r\n`) come
+  back through Exchange mangled — words silently lose a character
+  ("set the brief" -> "set =he brief"). It does not show in draft
+  listings, only on reading the stored body, so read the body back and
+  assert on a few phrases after any MIME import (`cte="base64"`).
 - MCP tool schemas come from `bind()`-trimmed signatures; after changing
   tools the running MCP server needs a reconnect (`/mcp`) to show them.
 - First Graph hit on a cold mailbox can 503
@@ -182,7 +204,28 @@ breaking change — `tests/test_offline.py` carries the import contract.
   client-side via `pull()`; `$select`/`$expand` are fine. Offline mocks
   accept anything, so this only showed up live (it did, on first run).
 
-## Current state (2026-08-20)
+## Current state (2026-09-16)
+
+Still version 2.6.0 — no code has shipped since. What HAS happened is that
+the compose→send→verify loop got used hard on live client engagements, and
+the backlog is now mostly defects those runs found. Read the backlog before
+planning anything: CKM-43 (add_attachment refuses >3 MB — blocking on two
+separate engagements three weeks apart, worked around both times with the
+graph-direct upload-session recipe), CKM-48 (revise_draft PREPENDS instead
+of replacing on reply drafts, leaving two versions of a client-facing
+message in one draft), CKM-47 (reply-draft body renders in the wrong font
+unless every paragraph carries the style), CKM-45/CKM-44/CKM-49 (one
+cluster: the tooling assumes one mailbox == one identity, and export
+records silently lose inline images, threading and Send-As direction),
+CKM-46 item 3 (doctor cannot see the MCP registration), CKM-50 (migrate
+this board to OIF). CKM-30 is still code-complete in `doing`, blocked on a
+tenant switch; CKM-18, CKM-28 and CKM-31 are the older backlog items.
+
+The recurring shape, worth naming: a live gap gets worked around with a
+`docs/graph-direct.md` recipe, the recipe works first time, and the gap
+stays open. That has now happened three times (CKM-43 twice, CKM-45 once).
+Recipes are accruing where tools should be — see Recipe 4, which is the
+whole of CKM-45's fix written as a thing every caller must hand-roll.
 
 Version 2.6.0 adds the compose→send→verify loop (CKM-42, the approved
 option A of CKM-41): write-tier `revise_draft` (rewrite your text, keep
@@ -191,10 +234,12 @@ comments so the region is exact), `discard_draft`, `remove_attachment`,
 per-profile `signature_html` in profiles.toml applied at draft creation,
 and read-tier `verify_message` (recipients, attachments, quoted-thread
 survival, signature presence, non-ASCII in the text you wrote). No new
-Graph scope, no consent, no tenant operation. OFFLINE-VERIFIED ONLY so
-far — `scripts/draft-cycle-smoke.py` (now walking the whole loop through
-the tools) has not been run live for this release; do that before relying
-on it. CKM-41's options B (transcripts/CKM-30) and C (client-tenant
+Graph scope, no consent, no tenant operation. It was OFFLINE-VERIFIED ONLY
+at release; live use since has exercised it heavily and returned two
+defects (CKM-47, CKM-48), so treat the loop as live-proven but not
+live-clean. Whether `scripts/draft-cycle-smoke.py` was ever run against
+this release is unrecorded — run it before relying on the loop.
+CKM-41's options B (transcripts/CKM-30) and C (client-tenant
 publisher verification/CKM-31) are deliberately NOT started — seanwy
 approved A only, by phone, 2026-08-20.
 
@@ -231,9 +276,6 @@ disconnected pydantic entirely — models are stdlib dataclasses
 (pydantic-compatible via TypeAdapter, test-pinned), core deps are exactly
 httpx/msal; v2.1.0 added the teams discovery preset (CKM-25 — the option
 (c) slice: read-only, org-scoped, SEPARATE consent tier). Teams bot
-messaging stays out of this repo by decision (CKM-24). Board: CKM-18
-(SharePoint/Teams-site file sync), CKM-28 (Teams persona options) and
-CKM-31 (client-tenant onboarding) are open in backlog; CKM-30 (meeting
-transcripts) is code-complete in doing, blocked on a tenant switch. Security +
+messaging stays out of this repo by decision (CKM-24). Security +
 simplification reviews completed; decisions on deliberately-kept
 complexity are recorded in the CKM-14 board history.

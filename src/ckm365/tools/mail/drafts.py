@@ -102,6 +102,14 @@ def create_reply_draft(ctx: Ctx, message_id: str, body_html: str = "", *,
     can rewrite your text later without disturbing the signature or the
     quoted history.
 
+    THE MESSAGE MUST LIVE IN THE MAILBOX YOU ARE REPLYING FROM. Graph
+    seeds the reply from its own copy, so a shared mailbox cannot reply to
+    something delivered to a person's mailbox — the usual agent-persona
+    case. Copying the original in does not rescue it: a MIME import
+    arrives isDraft=true and createReply then fails 400
+    ErrorInvalidReferenceItem. Compose the reply as MIME instead
+    (docs/graph-direct.md).
+
     Returns the Draft; keep its id for update_draft / revise_draft /
     add_attachment / verify_message / send_draft.
     """
@@ -246,6 +254,16 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
     rewrite the text without touching the signature. For a REPLY use
     create_reply_draft — only Graph can assemble the quoted history and
     the threading headers that keep it in the thread.
+
+    SENDING AS A SHARED MAILBOX (agent persona, ops@, ...): passing
+    mailbox= puts the draft in that mailbox but does NOT make it the
+    author. Graph sets from/sender to the SIGNED-IN USER, so the mail goes
+    out under their name — silently, because the draft listing shows the
+    mailbox you asked for. There is no from= parameter yet (CKM-45).
+    Until there is: PATCH `from` on the returned draft, then confirm with
+    `$select=from,sender`. For a persona reply that must also THREAD, see
+    the MIME-import recipe in docs/graph-direct.md — Graph will not accept
+    In-Reply-To any other way.
     """
     ctx.require_write()
     signature_html = _signature(ctx, account, signature)

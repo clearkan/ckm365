@@ -31,6 +31,7 @@ scripts were reaching for. Look here before you reach for `Graph`:
 | pasting an HTML signature literal | `signature_html` on the profile, applied at draft creation |
 | `DELETE /messages/{id}` on a draft you abandoned | `discard_draft` (drafts only, goes to Deleted Items) |
 | `DELETE /messages/{id}/attachments/{id}` | `remove_attachment` |
+| a draft that must be FROM a shared mailbox, or must thread from one | nothing yet — Recipe 4 below, and CKM-45 |
 | deleting a reply to re-seed it as a reply-all | `discard_draft` + `create_reply_draft(reply_all=True)` |
 | fetch + strip HTML + assert recipients/attachments/quote | `verify_message` (one read-tier call, before or after sending) |
 | a PATCH loop over many messages' read state/flags/folder | the triage tools — they batch 20 to a round trip |
@@ -179,6 +180,100 @@ or name, refuses the kinds that have no bytes, confines writes to
 `itemAttachment` (an embedded message) and `referenceAttachment` (a cloud
 link) will not give you a usable file — check `kind` from
 `list_attachments` (Graph's `@odata.type`) first.
+
+## Recipe 4 — MIME import (the only way to set From or threading)
+
+Two things Graph will not let you do through JSON, and one endpoint that
+does both. Needed whenever an agent persona (a shared mailbox) has to send
+mail that is properly attributed and properly threaded.
+
+The two walls:
+
+- `create_draft(mailbox=<shared>)` puts the draft in the shared mailbox but
+  Graph sets `from`/`sender` to the **signed-in user** — the mail goes out
+  under a person's name. PATCHing `from` afterwards works, but only for
+  authorship (see CKM-45).
+- `In-Reply-To` and `References` cannot be PATCHed at all:
+  `400 InvalidInternetMessageHeader — header name should start with 'x-'`.
+  And `createReply` only works on a message that lives **in the mailbox you
+  are replying from**, which the persona's never does: counterparties write
+  to the human. Importing their message first does not help — a MIME import
+  arrives `isDraft: true` and `createReply` then fails
+  `400 ErrorInvalidReferenceItem`.
+
+The way through: build the reply yourself as RFC-5322 and import it. Graph
+preserves `From`, `Message-ID`, `In-Reply-To` and `References` verbatim from
+MIME.
+
+```python
+import base64, httpx
+from email.message import EmailMessage
+from email.utils import formatdate
+from ckm365.tools import Ctx
+from ckm365.graph import mailbox_path, GRAPH_BASE
+
+PERSONA = "agent@tenant-a.example"
+PARENT  = "<the-counterparty-message-id@their.host>"   # from get_message
+PRIOR   = "<the-one-before-that@their.host>"           # its own References
+
+m = EmailMessage()
+m["From"] = f"Agent <{PERSONA}>"
+m["To"] = "colleague@tenant-b.example"
+m["Subject"] = "RE: the original subject"          # keep it byte-identical
+m["Date"] = formatdate(localtime=True)
+m["In-Reply-To"] = PARENT
+m["References"] = f"{PRIOR} {PARENT}"              # chain, oldest first
+m.set_content("This message requires an HTML-capable reader.", cte="base64")
+m.add_alternative(html_body, subtype="html", charset="utf-8", cte="base64")
+
+with Ctx.create(account="tenant-a", write=True) as ctx:
+    g = ctx.graph()
+    drafts = mailbox_path(PERSONA, "mailFolders/drafts")
+    g.get(drafts, params={"$select": "id"})        # warm the mailbox — see below
+    r = httpx.post(
+        GRAPH_BASE + drafts + "/messages",
+        headers={"Authorization": f"Bearer {g.auth.token()}",
+                 "Content-Type": "text/plain"},
+        content=base64.b64encode(m.as_bytes()), timeout=120.0)
+    if r.status_code != 201:                       # NOT optional — see below
+        raise RuntimeError(f"MIME import failed {r.status_code}: {r.text[:300]}")
+    draft_id = r.json()["id"]          # lands in the persona's Drafts
+```
+
+Do NOT let it default to quoted-printable. `EmailMessage` uses QP unless
+told otherwise, and its soft line breaks (`=\r\n`) come back through
+Exchange mangled: words lose a character (`set the brief` ->
+`set =he brief`). Nothing in the draft listing shows it. Pass
+`cte="base64"` on every part, then read the stored body back and assert on
+a few phrases before handing the draft to a human.
+
+CHECK THE STATUS CODE. This is the one recipe here that does not go
+through `Graph`, because `request()` carries `json=` only and this body is
+raw base64 — so nothing parses the error envelope for you. Without the
+check, every failure mode arrives as `KeyError: 'id'`, which tells you
+nothing: a 403 on a persona mailbox you lack rights over, a 400 on
+malformed MIME, a 413, a 429, a cold-mailbox 503. That is also the real
+cost of the bypass — the parsed `GraphError` (code, message, request-id)
+and the 429 `Retry-After` retry, which is safe because Graph throttles
+before executing.
+
+What the bypass does NOT cost you is the 503/504 budget, and it is worth
+knowing why. `Graph` would not retry this POST either: `_IDEMPOTENT`
+(graph.py:39) is GET/HEAD/PUT/DELETE, so CKM-35's widened transient budget
+is a GET-side policy and a blind re-POST is exactly what it refuses to do —
+it would leave TWO drafts in the persona's Drafts. Hence the warming GET
+above: it spends the retry budget on a call where retrying is free, so the
+cold-mailbox 503 lands there rather than on the import. If the import
+itself 503s, LIST Drafts before re-sending; do not assume it did not land.
+
+Auth is not bypassed — `g.auth.token()` is the same call `_send` makes, so
+the flock, the cache reload and the rotated-refresh-token handling all
+still apply.
+
+Still a draft, still never sent — the human reviews and sends as always.
+Quoted history is yours to append (Graph is not seeding this one), so paste
+the parent's text under a `<blockquote>`-ish div with the usual
+"On <date>, <sender> wrote:" line.
 
 ## Scopes: what the cached token can and cannot do
 
