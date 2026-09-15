@@ -3,7 +3,7 @@ title: Drafts in a shared mailbox default from= to the signed-in user — sent m
 column: backlog
 status: backlog
 created_at: '2026-08-29T04:05:00Z'
-updated_at: '2026-08-29T04:05:00Z'
+updated_at: '2026-09-15T21:15:00Z'
 assignees: []
 description: |-
   LIVE DEFECT, reported by seanwy 2026-08-29: a draft created via
@@ -106,6 +106,24 @@ description: |-
   MIME with the threading chain and the persona From, base64 CTE, imports
   to the persona's Drafts, returns the Draft. That is the whole workaround
   in one call, and it also fixes the plain create_draft from= gap above.
+
+  IMPLEMENTATION NOTE (2026-09-15, from a design review of Recipe 4):
+  whoever builds create_persona_reply will need Graph.request() to carry a
+  RAW body. It accepts json= only, and the MIME import body is base64 bytes
+  with Content-Type: text/plain — which is why the documented recipe has to
+  drop to a bare httpx.post. A tool cannot do that and stay testable: the
+  whole offline suite runs through Graph(transport=MockTransport). Minimal
+  shape is a `content: bytes | None = None` pass-through on request()
+  threaded to _send(), exclusive with json=, plus one offline test asserting
+  the body and Content-Type reach the transport. Deliberately NOT done as
+  part of the Recipe 4 documentation commit, which is doc-only and carries
+  no version bump; it belongs to this issue's implementation.
+  The retry policy needs no change: POST is correctly excluded from
+  _IDEMPOTENT (graph.py:39), so neither the wrapper nor the raw call retries
+  a 503 — which is right, because a re-POSTed MIME import would leave two
+  drafts in the persona's Drafts. CKM-43's chunk PUTs do NOT need this and
+  are not a second caller: they go to a pre-authenticated uploadUrl on
+  another host with no bearer.
 dependencies: []
 parent_id: null
 priority: high
@@ -120,4 +138,16 @@ history:
     out under his name instead of the persona's because the draft created
     in the persona's shared mailbox defaulted from= to the signed-in user.
   event: created
+- at: '2026-09-15T21:15:00Z'
+  by: claude
+  details: 'History backfill — the 2026-08-30 findings (MIME import solves both
+    the from= and the threading halves; verified in the wild when the owner sent
+    one; the third bug in the cluster, export_message mis-tagging Send-As mail as
+    inbound) were written into the description at the time WITHOUT a history entry
+    or an updated_at bump, so the issue read as untouched since 29 Aug to anyone
+    skimming timestamps. Recorded now. Scope is unchanged and the issue stays in
+    backlog: the technique is proven but no tool implements it, so every use is
+    still a hand-rolled ~30-line MIME build. The technique itself is now documented
+    as Recipe 4 in docs/graph-direct.md.'
+  event: updated
 version: 1

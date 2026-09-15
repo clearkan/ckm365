@@ -61,6 +61,17 @@ session; everything else worth knowing is one hop from here.
   internal project names. Placeholders are `tenant-a.example` /
   `tenant-b.example`, `operator@`, `ops@`, `agent@`, `colleague@`,
   `other-user@`. Real values live in local config and the owner's head.
+  This rule has been BREACHED once, so treat it as live rather than
+  theoretical: three issues filed from live client work (CKM-43, CKM-47,
+  CKM-49) named client organisations, an engagement, an account and a
+  document reference. It was caught on 2026-09-15 while the commits were
+  still local and scrubbed before any push, but only because someone
+  looked. The failure mode is specific and worth naming — an agent writing
+  up a live incident copies the details it had in front of it, and the
+  identifying ones do not feel like secrets in the moment. When filing from
+  a real engagement, write the issue, then re-read it once asking only
+  "would a stranger learn who this was about?". Keep every number, error
+  code and failure mode; those are the value. Drop the names.
 - Never log or print message bodies, subjects of real mail, or tokens —
   ids, counts, and truncated ids only (see `bind()` in tools/context.py
   and the smoke scripts for the pattern).
