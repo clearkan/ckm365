@@ -34,8 +34,9 @@ of them takes a LIST of ids, reports per-id outcomes, and never lets one
 
 from .attachments import (add_attachment, download_attachment,
                           list_attachments, remove_attachment)
-from .drafts import (create_draft, create_forward_draft, create_reply_draft,
-                     discard_draft, revise_draft, send_draft, update_draft)
+from .drafts import (create_draft, create_forward_draft, create_persona_reply,
+                     create_reply_draft, discard_draft, revise_draft,
+                     send_draft, update_draft)
 from .export import export_message
 from .read import (get_message, get_message_headers, group_by_sender,
                    list_mail_folders, list_messages)
@@ -45,7 +46,8 @@ from .verify import verify_message
 
 __all__ = [
     "add_attachment", "complete_flag", "create_draft", "create_forward_draft",
-    "create_reply_draft", "discard_draft", "download_attachment",
+    "create_persona_reply", "create_reply_draft", "discard_draft",
+    "download_attachment",
     "export_message", "flag", "get_message", "get_message_headers",
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",

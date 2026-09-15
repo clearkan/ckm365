@@ -16,10 +16,14 @@ CKM-48 found that Exchange strips those on store, which had silently
 broken every revision ckm365 ever made — see common.py.
 """
 
+import base64
+import html as _html
 import logging
 import re
+from email.message import EmailMessage
+from email.utils import formatdate, getaddresses
 
-from ...graph import Graph, mailbox_path as _path
+from ...graph import Graph, mailbox_path, mailbox_path as _path
 from ...models import Draft
 from ..context import Ctx
 from .common import (BODY_MARK, SIGNATURE_MARK, fence, fenced_region,
@@ -235,6 +239,152 @@ def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
     log.info("tool=revise_draft mailbox=%r message_id=%r fenced=%s bytes=%d",
              mb, message_id, bool(region), len(merged))
     return Draft.from_graph(patched)
+
+
+
+# --- the persona reply (CKM-45) --------------------------------------------
+#
+# An agent persona is a SHARED MAILBOX, and Graph gives it no way to answer
+# a thread through JSON. Two walls, both verified: a draft created in the
+# shared mailbox has from/sender set to the SIGNED-IN USER, so the mail goes
+# out under a person's name; and In-Reply-To/References cannot be PATCHed at
+# all (400 InvalidInternetMessageHeader, x- prefixes only), so threading
+# cannot be added after creation. createReply is no escape either, because it
+# only works on a message living in the mailbox being replied FROM — and the
+# counterparty wrote to the human, not to the persona.
+#
+# MIME import is the one route through, and it clears both walls at once:
+# Graph PRESERVES From, Message-ID, In-Reply-To and References verbatim when
+# a message arrives as RFC-5322. Proven end to end in the wild on 2026-08-30,
+# including through a real send.
+
+_RE_PREFIX = re.compile(r"^\s*re\s*:", re.IGNORECASE)
+
+
+def _quoted_history(original: dict) -> str:
+    """Outlook's own "On <date>, <who> wrote:" block over the original body.
+
+    Graph seeds this for us on a createReply; a MIME import has no seed, so
+    we build it. Kept crude on purpose — it is quoted history, not content.
+    """
+    sender = (original.get("from") or {}).get("emailAddress") or {}
+    who = sender.get("name") or sender.get("address") or "the sender"
+    when = original.get("receivedDateTime") or ""
+    body = (original.get("body") or {}).get("content") or ""
+    return (f'<div id="divRplyFwdMsg"><hr>'
+            f"<b>From:</b> {_html.escape(str(who))}<br>"
+            f"<b>Sent:</b> {_html.escape(str(when))}<br>"
+            f"<b>Subject:</b> {_html.escape(str(original.get('subject') or ''))}"
+            f"</div>{body}")
+
+
+def _reply_recipients(original: dict, persona: str, reply_all: bool
+                      ) -> tuple[list[str], list[str]]:
+    """Who a reply goes to: the sender, plus everyone else if reply_all.
+
+    The persona itself is dropped from both lists — replying to a thread it
+    is on must not mail itself — and so is any duplicate.
+    """
+    def addrs(key: str) -> list[str]:
+        return [(r.get("emailAddress") or {}).get("address") or ""
+                for r in original.get(key) or []]
+
+    sender = ((original.get("from") or {}).get("emailAddress") or {}).get("address")
+    to = [sender] if sender else []
+    cc: list[str] = []
+    if reply_all:
+        to += addrs("toRecipients")
+        cc = addrs("ccRecipients")
+    seen = {persona.lower()}
+    def dedupe(items: list[str]) -> list[str]:
+        out = []
+        for a in items:
+            low = (a or "").lower()
+            if low and low not in seen:
+                seen.add(low)
+                out.append(a)
+        return out
+    return dedupe(to), dedupe(cc)
+
+
+def create_persona_reply(ctx: Ctx, message_id: str, *, as_mailbox: str,
+                         body_html: str, reply_all: bool = False,
+                         signature: bool = True, account: str | None = None,
+                         mailbox: str | None = None) -> Draft:
+    """Reply to a message AS a shared mailbox, correctly threaded, when the
+    original was delivered somewhere else.
+
+    This is the agent-persona case and the ONLY tool that handles it.
+    create_reply_draft cannot: Graph seeds a reply from its own copy of the
+    message, so a shared mailbox can only reply to something already in that
+    shared mailbox, and counterparties write to the human. create_draft with
+    an "RE:" subject loses In-Reply-To/References, so the reply starts a new
+    conversation in the counterparty's client, and those headers CANNOT be
+    PATCHed on afterwards (Graph refuses any header not starting with x-).
+
+    So this builds the reply as MIME and imports it, which is the one route
+    that keeps BOTH the authorship and the threading. The draft lands in
+    `as_mailbox`'s own Drafts, From set to `as_mailbox`, In-Reply-To and
+    References pointing at the counterparty's real Message-ID, with the
+    quoted history inline and your text fenced for revise_draft.
+
+    `message_id` is the original, read from `mailbox` (the human's, by
+    default the signed-in user). `as_mailbox` is the persona replying — you
+    need Send As on it for the eventual send, which is NOT checked here
+    because nothing is sent here.
+
+    Still draft-only: a human reviews and sends, as with every other tool.
+    """
+    ctx.require_write()
+    new_html = unfenced(body_html, "body_html")
+    g, mb = ctx.target(account, mailbox)
+    original = g.get(message_path(mb, message_id), params={"$select": (
+        "subject,from,toRecipients,ccRecipients,receivedDateTime,"
+        "internetMessageId,internetMessageHeaders,body")},
+        headers=prefer("html"))
+
+    parent_id = original.get("internetMessageId") or ""
+    references = ""
+    for header in original.get("internetMessageHeaders") or []:
+        if (header.get("name") or "").lower() == "references":
+            references = header.get("value") or ""
+    subject = original.get("subject") or ""
+    if not _RE_PREFIX.match(subject):
+        subject = f"RE: {subject}"
+    to, cc = _reply_recipients(original, as_mailbox, reply_all)
+    if not to:
+        raise ValueError("the original message has no sender to reply to")
+
+    signature_html = _signature(ctx, account, signature)
+    composed = _composed(new_html, signature_html) + _quoted_history(original)
+
+    message = EmailMessage()
+    message["From"] = as_mailbox
+    message["To"] = ", ".join(to)
+    if cc:
+        message["Cc"] = ", ".join(cc)
+    message["Subject"] = subject
+    message["Date"] = formatdate(localtime=True)
+    if parent_id:
+        message["In-Reply-To"] = parent_id
+        message["References"] = f"{references} {parent_id}".strip()
+    # BASE64, never quoted-printable: EmailMessage defaults to QP and its
+    # soft line breaks come back through Exchange mangled, silently eating a
+    # character mid-word ("set the brief" -> "set =he brief"). Invisible in a
+    # draft listing; it only shows on reading the stored body back.
+    message.set_content("This message requires an HTML-capable reader.",
+                        cte="base64")
+    message.add_alternative(composed, subtype="html", charset="utf-8",
+                            cte="base64")
+
+    created = g.post(
+        mailbox_path(as_mailbox, "mailFolders/drafts/messages"),
+        content=base64.b64encode(message.as_bytes()),
+        headers={"Content-Type": "text/plain"})
+    log.info("tool=create_persona_reply as_mailbox=%r message_id=%r "
+             "reply_all=%s threaded=%s", as_mailbox, message_id, reply_all,
+             bool(parent_id))
+    return Draft.from_graph(created)
 
 
 def discard_draft(ctx: Ctx, message_id: str, *, account: str | None = None,

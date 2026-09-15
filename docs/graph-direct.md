@@ -32,7 +32,7 @@ scripts were reaching for. Look here before you reach for `Graph`:
 | `DELETE /messages/{id}` on a draft you abandoned | `discard_draft` (drafts only, goes to Deleted Items) |
 | `DELETE /messages/{id}/attachments/{id}` | `remove_attachment` |
 | `createUploadSession` + a chunk loop for a file over 3 MB | `add_attachment` — it picks the path by size, up to 150 MB (CKM-43) |
-| a draft that must be FROM a shared mailbox, or must thread from one | nothing yet — Recipe 4 below, and CKM-45 |
+| a draft that must be FROM a shared mailbox, or must thread from one | `create_persona_reply` (CKM-45) — MIME import in one call |
 | deleting a reply to re-seed it as a reply-all | `discard_draft` + `create_reply_draft(reply_all=True)` |
 | fetch + strip HTML + assert recipients/attachments/quote | `verify_message` (one read-tier call, before or after sending) |
 | a PATCH loop over many messages' read state/flags/folder | the triage tools — they batch 20 to a round trip |
@@ -183,6 +183,14 @@ link) will not give you a usable file — check `kind` from
 `list_attachments` (Graph's `@odata.type`) first.
 
 ## Recipe 4 — MIME import (the only way to set From or threading)
+
+> **There is now a tool: `create_persona_reply` (CKM-45, v2.7.0).** It does
+> everything below — reads the original from wherever it lives, builds the
+> threaded MIME with the persona as From, base64 CTE, imports to the
+> persona's Drafts, fences your text so `revise_draft` still works — and it
+> is tested. Use it. What follows is kept because the MECHANISM is worth
+> understanding, and because the same import is the route for anything else
+> that needs a header Graph will not let you PATCH.
 
 Two things Graph will not let you do through JSON, and one endpoint that
 does both. Needed whenever an agent persona (a shared mailbox) has to send

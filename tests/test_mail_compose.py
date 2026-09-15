@@ -9,6 +9,8 @@ reports recipients, attachments, the surviving quote and any smart quote
 that leaked in. Fixtures are fake ids and *.example addresses throughout.
 """
 
+import base64
+import email
 import json
 import re
 
@@ -146,6 +148,100 @@ def test_caller_html_may_not_forge_the_fence():
                           body_html=f'<div id="{BODY_MARK}-start"></div>sneaky')
     with pytest.raises(ValueError, match="compose markers"):
         mail.revise_draft(ctx, "d1", f"<div id='{BODY_MARK}-end'></div>")
+
+
+# --- create_persona_reply (CKM-45) -----------------------------------------
+
+ORIGINAL = {
+    "id": "m1", "subject": "Q1 figures",
+    "from": {"emailAddress": {"name": "Other", "address": "other-user@tenant-b.example"}},
+    "toRecipients": [{"emailAddress": {"address": MAILBOX}},
+                     {"emailAddress": {"address": "colleague@tenant-b.example"}}],
+    "ccRecipients": [{"emailAddress": {"address": "agent@tenant-a.example"}}],
+    "receivedDateTime": "2026-09-01T10:00:00Z",
+    "internetMessageId": "<parent@their.host>",
+    "internetMessageHeaders": [{"name": "References", "value": "<older@their.host>"}],
+    "body": {"contentType": "html", "content": "<p>the original</p>"},
+}
+
+
+def _persona_ctx():
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=ORIGINAL)
+        return httpx.Response(201, json={"id": "p1", "isDraft": True})
+    return _recorder([(lambda r: True, handler)])
+
+
+def _imported(seen):
+    """The RFC-5322 message that actually went to Graph."""
+    post = [c for m, _, c in seen if m == "POST"][-1]
+    return email.message_from_bytes(base64.b64decode(post))
+
+
+def test_create_persona_reply_imports_threaded_mime_into_the_persona_drafts():
+    """CKM-45: the ONLY route that keeps authorship AND threading. Graph sets
+    from= to the signed-in user on a JSON draft, and refuses In-Reply-To on a
+    PATCH entirely — but preserves both when the message arrives as MIME."""
+    handler, seen = _persona_ctx()
+    draft = mail.create_persona_reply(
+        _ctx(handler), "m1", as_mailbox="agent@tenant-a.example",
+        body_html="<p>our answer</p>")
+    assert draft.id == "p1"
+
+    method, url, _ = [row for row in seen if row[0] == "POST"][-1]
+    assert url.endswith("/users/agent%40tenant-a.example/"
+                        "mailFolders/drafts/messages")
+
+    msg = _imported(seen)
+    assert msg["From"] == "agent@tenant-a.example"      # the PERSONA, not us
+    assert msg["To"] == "other-user@tenant-b.example"
+    assert msg["In-Reply-To"] == "<parent@their.host>"
+    assert msg["References"] == "<older@their.host> <parent@their.host>"
+    assert msg["Subject"] == "RE: Q1 figures"
+
+
+def test_create_persona_reply_encodes_base64_never_quoted_printable():
+    """QP soft line breaks come back through Exchange mangled, silently
+    eating a character mid-word. Invisible in a draft listing."""
+    handler, seen = _persona_ctx()
+    mail.create_persona_reply(_ctx(handler), "m1",
+                              as_mailbox="agent@tenant-a.example",
+                              body_html="<p>our answer</p>")
+    parts = _imported(seen).walk()
+    encodings = {p.get("Content-Transfer-Encoding") for p in parts
+                 if p.get("Content-Transfer-Encoding")}
+    assert encodings == {"base64"}
+
+
+def test_create_persona_reply_keeps_the_persona_off_its_own_reply_all():
+    handler, seen = _persona_ctx()
+    mail.create_persona_reply(_ctx(handler), "m1",
+                              as_mailbox="agent@tenant-a.example",
+                              body_html="<p>x</p>", reply_all=True)
+    msg = _imported(seen)
+    assert "agent@tenant-a.example" not in (msg["To"] or "")
+    assert "agent@tenant-a.example" not in (msg["Cc"] or "")   # it was on cc
+    assert MAILBOX in msg["To"] and "colleague@tenant-b.example" in msg["To"]
+
+
+def test_create_persona_reply_fences_our_text_and_quotes_the_original():
+    handler, seen = _persona_ctx()
+    mail.create_persona_reply(_ctx(handler), "m1",
+                              as_mailbox="agent@tenant-a.example",
+                              body_html="<p>our answer</p>")
+    html = [p for p in _imported(seen).walk()
+            if p.get_content_type() == "text/html"][0]
+    body = html.get_payload(decode=True).decode()
+    assert fence(BODY_MARK, "<p>our answer</p>") in body   # revise_draft works
+    assert "the original" in body and "divRplyFwdMsg" in body
+
+
+def test_create_persona_reply_is_write_tier():
+    with pytest.raises(WriteDisabled):
+        mail.create_persona_reply(
+            _ctx(lambda r: httpx.Response(200, json={}), write=False), "m1",
+            as_mailbox="agent@tenant-a.example", body_html="<p>x</p>")
 
 
 # --- revise_draft ----------------------------------------------------------

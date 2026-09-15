@@ -9,6 +9,26 @@ Fixes the compose loop, which had never once worked against real Graph, and
 lifts the attachment ceiling that blocked two client deliverables.
 
 ### Added
+- **`create_persona_reply`** (write tier, CKM-45) — reply to a message AS a
+  shared mailbox, correctly threaded, when the original was delivered
+  somewhere else. This is the agent-persona case, and no existing tool could
+  do it: Graph sets `from`/`sender` on a JSON draft to the SIGNED-IN USER, so
+  persona mail went out under a person's name; `In-Reply-To`/`References`
+  cannot be PATCHed at all (400 `InvalidInternetMessageHeader`, `x-` only);
+  and `createReply` only works on a message already in the mailbox you are
+  replying from, which the persona's never is because counterparties write to
+  the human. Composing with `create_draft` and an "RE:" subject started a new
+  conversation in the counterparty's client.
+  It builds the reply as RFC-5322 and imports it, which Graph accepts while
+  preserving `From`, `Message-ID`, `In-Reply-To` and `References` verbatim —
+  the one route that keeps authorship AND threading. Parts are base64, never
+  quoted-printable, because QP soft line breaks come back through Exchange
+  mangled and silently eat a character mid-word. Your text is fenced, so
+  `revise_draft` works on the result. Still draft-only; nothing is sent.
+- **`Graph.request(content=...)`** — a raw request body for the rare endpoint
+  that does not take JSON (the MIME import above). Mutually exclusive with
+  `json=`. Until now a non-JSON body meant dropping out of the wrapper
+  entirely, which cost the parsed `GraphError` and the 429 retry.
 - **`add_attachment` now takes files up to 150 MB** (CKM-43), streaming
   anything over 3 MB through a Graph upload session. ONE entry point: the
   path is chosen by size and callers do not have to know which ran. The file
@@ -44,6 +64,14 @@ lifts the attachment ceiling that blocked two client deliverables.
 - The defect was never reply-specific despite CKM-48's title:
   `create_draft` and `create_forward_draft` fence through the same helper
   and were equally affected.
+- **`export_message` tagged Send-As mail `inbound`** (CKM-45, the third bug
+  in that cluster). Direction came from `sender == mailbox`, but a message
+  sent as a shared mailbox lands in the HUMAN's Sent Items with the shared
+  mailbox as sender — so the persona's own outbound mail was tagged inbound,
+  and anything filtering an archive on direction silently got the wrong set.
+  Which folder the message is in is now authoritative, with the sender
+  comparison kept as the fallback outside Sent Items. `Message` gains
+  `parent_folder_id` to support it.
 - **`verify_message["quoted_thread"]` was a false negative on any reply to
   a PLAIN-TEXT original** — a separate defect, found while verifying the
   above because one tenant's newest mail was HTML and the other's was

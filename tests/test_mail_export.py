@@ -60,6 +60,8 @@ def _ctx(message=None, attachments=()):
             return httpx.Response(200, content=RAW_MIME)
         if request.url.path.endswith("/attachments"):
             return httpx.Response(200, json={"value": list(attachments)})
+        if request.url.path.endswith("/mailFolders/sentitems"):
+            return httpx.Response(200, json={"id": "SENTITEMS"})
         return httpx.Response(200, json=message or _message())
 
     ctx = Ctx(profiles={"tenant-a": Profile(
@@ -189,3 +191,32 @@ def test_description_falls_back_to_the_body_when_there_is_no_preview(tmp_path):
     dest = tmp_path / "p.md"
     mail.export_message(ctx, "m1", str(dest))
     assert f'description: "{BODY}"' in dest.read_text()
+
+
+def test_send_as_mail_in_sent_items_is_tagged_outbound(tmp_path):
+    """CKM-45: the sender test called the persona's OWN sent mail inbound.
+
+    A message sent AS a shared mailbox lands in the HUMAN's Sent Items with
+    the shared mailbox as sender, so `sender == mailbox` is false and the
+    record came out tagged `inbound` — silently wrong for anything filtering
+    an archive on direction. The folder is authoritative.
+    """
+    sent_as_persona = _message() | {
+        "from": {"emailAddress": {"address": "agent@tenant-a.example"}},
+        "parentFolderId": "SENTITEMS",
+    }
+    ctx, _, _ = _ctx(sent_as_persona)
+    dest = tmp_path / "record.md"
+    mail.export_message(ctx, "m1", str(dest))
+    front = dest.read_text().split("---")[1]
+    assert "outbound" in front and "inbound" not in front
+
+
+def test_ordinary_inbound_mail_is_still_inbound(tmp_path):
+    """The folder rule must not tag everything outbound."""
+    inbound = _message() | {"parentFolderId": "INBOX"}
+    ctx, _, _ = _ctx(inbound)
+    dest = tmp_path / "record.md"
+    mail.export_message(ctx, "m1", str(dest))
+    front = dest.read_text().split("---")[1]
+    assert "inbound" in front and "outbound" not in front

@@ -161,12 +161,17 @@ class MessageSummary:
 class Message(MessageSummary):
     SELECT: ClassVar[str] = (MessageSummary.SELECT +
                              ",body,bccRecipients,internetMessageId,"
-                             "internetMessageHeaders,webLink")
+                             "internetMessageHeaders,webLink,parentFolderId")
     body: Body | None = None
     bcc: list[Recipient] = field(default_factory=list)
     internet_message_id: str | None = None
     headers: MessageHeaders | None = None
     web_link: str | None = None
+    # Which folder the message actually sits in. The only AUTHORITATIVE
+    # answer to "did this mailbox send it": a Send-As copy lands in the
+    # human's Sent Items with the SHARED mailbox as sender, so comparing
+    # sender to mailbox calls it inbound (CKM-45).
+    parent_folder_id: str | None = None
 
     @classmethod
     def _kw(cls, d: dict[str, Any]) -> dict[str, Any]:
@@ -176,7 +181,8 @@ class Message(MessageSummary):
             internet_message_id=d.get("internetMessageId"),
             headers=MessageHeaders.from_graph(d)
                     if d.get("internetMessageHeaders") else None,
-            web_link=d.get("webLink"))
+            web_link=d.get("webLink"),
+            parent_folder_id=d.get("parentFolderId"))
 
 
 Draft = Message

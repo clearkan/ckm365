@@ -252,8 +252,12 @@ def test_create_draft_posts_to_the_mailbox_message_collection():
 
 def test_tools_for_presets():
     assert len(tools_for(["mail"])) == 13  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 27
-    assert len(tools_for(["mail"], write=True, send=True)) == 28
+    assert len(tools_for(["mail"], write=True)) == 28
+    assert len(tools_for(["mail"], write=True, send=True)) == 29
+    # create_persona_reply is WRITE tier, not send: it imports a draft into
+    # the persona's Drafts and nothing leaves the tenant (CKM-45).
+    assert mail.create_persona_reply in tools_for(["mail"], write=True)
+    assert mail.create_persona_reply not in tools_for(["mail"])
     assert len(tools_for(["teams"])) == 4  # 3 read-only + list_accounts
     assert len(tools_for(["teams"], write=True, send=True)) == 4  # no write tier
     # The triage tools (CKM-33/34/36) are write tier, not send tier: read
@@ -276,11 +280,11 @@ def test_tools_for_presets():
     assert mail.discard_draft in tools_for(["mail"], write=True)
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 32
-    assert len(tools_for(["all"], write=True, send=True)) == 33
+    assert len(tools_for(["all"], write=True)) == 33
+    assert len(tools_for(["all"], write=True, send=True)) == 34
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 36
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 37
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):

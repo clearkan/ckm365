@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 from ... import __version__
+from ...graph import Graph, GraphError, mailbox_path
 from ...models import Attachment, Message
 from ..context import Ctx
 from .attachments import attachments_of
@@ -64,25 +65,49 @@ def _yaml_description(message: Message) -> str:
             if len(text) > _MAX_DESCRIPTION else text)
 
 
-def _tags(message: Message, mailbox: str) -> list[str]:
+def _sent_folder_id(g: Graph, mailbox: str) -> str | None:
+    """The mailbox's Sent Items id, or None if it cannot be read.
+
+    Direction is worth one extra GET because the cheap answer is wrong: see
+    _tags. A failure here degrades to the old heuristic rather than killing
+    an export.
+    """
+    try:
+        return g.get(mailbox_path(mailbox, "mailFolders/sentitems"),
+                     params={"$select": "id"}).get("id")
+    except GraphError:
+        return None
+
+
+def _tags(message: Message, mailbox: str, sent_folder: str | None) -> list[str]:
     """OKF tags: the facets worth filtering a knowledge repo on.
 
     Direction is OMITTED rather than guessed when Graph gives no sender —
     an unsent draft has no `from` yet, and calling that "inbound" would be
     a lie in the one field an index would group on.
+
+    WHICH FOLDER IT IS IN WINS over who sent it (CKM-45). Comparing sender
+    to mailbox looks obvious and is wrong for Send-As: a message sent AS a
+    shared mailbox lands in the HUMAN's Sent Items with the shared mailbox
+    as sender, so the sender test tagged the persona's own outbound mail
+    `inbound` — and anything filtering an archive on that tag silently got
+    the wrong set. Sent Items is authoritative; the sender comparison is
+    only the fallback outside it.
     """
     sender = (message.sender.address if message.sender else "").lower()
+    in_sent = bool(sent_folder and message.parent_folder_id == sent_folder)
     headers = message.headers
     return ["email"] + [tag for tag, on in (
-        ("outbound", bool(sender) and sender == mailbox.lower()),
-        ("inbound", bool(sender) and sender != mailbox.lower()),
+        ("outbound", in_sent or (bool(sender) and sender == mailbox.lower())),
+        ("inbound", not in_sent and bool(sender)
+         and sender != mailbox.lower()),
         ("attachments", message.has_attachments),
         ("bulk", bool(headers and headers.is_bulk)),
         ("auto-reply", bool(headers and headers.is_auto_reply))) if on]
 
 
 def _record(message: Message, attachments: list[Attachment], mailbox: str,
-            version: str) -> str:
+            version: str, sent_folder: str | None = None) -> str:
     """Render the greppable record: front matter, body, attachment manifest.
 
     The front matter is Open Knowledge Format v0.1 (openknowledgeformat.com):
@@ -100,7 +125,7 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
         "title": message.subject or "(no subject)",
         "description": _yaml_description(message),
         "resource": message.web_link,
-        "tags": _tags(message, mailbox),
+        "tags": _tags(message, mailbox, sent_folder),
         "timestamp": message.received,
         # extension keys: the mail specifics OKF has no opinion about
         "from": _who([message.sender]) if message.sender else "",
@@ -147,11 +172,11 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
       on (email, inbound/outbound, attachments, bulk, auto-reply).
       Deterministic, so re-exporting the same message produces the same
       file and git shows no diff.
-      DIRECTION IS DERIVED FROM `sender == mailbox`, which is WRONG for
-      Send-As mail (CKM-45): a message sent as a shared mailbox lands in
-      the HUMAN's Sent Items with the shared mailbox as sender, so the
-      record comes out tagged `inbound`. Check the tag when exporting from
-      sentitems until this is fixed.
+      Direction comes from WHICH FOLDER the message is in, falling back to
+      `sender == mailbox` outside Sent Items. The folder has to win because
+      Send-As breaks the sender test (CKM-45): a message sent as a shared
+      mailbox lands in the HUMAN's Sent Items with the shared mailbox as
+      sender, and used to come out tagged `inbound`.
     - `.eml` — the raw MIME exactly as Graph serves it: full fidelity
       (every header, HTML part and attachment bytes inline), the right
       choice for an evidence archive. NOT reliably greppable: Exchange
@@ -200,7 +225,8 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
             g.get(message_path(mb, message_id),
                   params={"$select": Message.SELECT}, headers=prefer("text")))
         items = attachments_of(g, mb, message_id) if message.has_attachments else []
-        record = _record(message, items, mb, __version__).encode("utf-8")
+        record = _record(message, items, mb, __version__,
+                         _sent_folder_id(g, mb)).encode("utf-8")
         written = write_atomic(dest, lambda part: part.write_bytes(record))
         count = len(items)
     log.info("tool=export_message mailbox=%r message_id=%r format=%s bytes=%d",

@@ -26,6 +26,7 @@ READ = {
 }
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,
+             mail.create_persona_reply,
              mail.update_draft, mail.revise_draft, mail.create_draft,
              mail.discard_draft, mail.add_attachment, mail.remove_attachment,
              # triage: metadata only — read state, flags, filing. Nothing

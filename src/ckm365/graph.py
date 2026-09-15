@@ -101,8 +101,19 @@ class Graph:
     def request(self, method: str, path: str, *,
                 params: Mapping[str, str] | None = None,
                 json: Any = None,
+                content: bytes | None = None,
                 headers: Mapping[str, str] | None = None) -> dict[str, Any] | None:
-        resp = self._send(method, path, params=params, json=json, headers=headers)
+        """Send one Graph call and return its parsed JSON body, or None.
+
+        `content` is a RAW request body for the rare endpoint that does not
+        take JSON — today that is the MIME import behind create_persona_reply
+        (base64 RFC-5322 with Content-Type: text/plain). It is mutually
+        exclusive with `json`; set the Content-Type yourself when you use it.
+        """
+        if json is not None and content is not None:
+            raise ValueError("pass json= or content=, not both")
+        resp = self._send(method, path, params=params, json=json,
+                          content=content, headers=headers)
         return resp.json() if resp.content else None
 
     def content(self, path: str, *, params: Mapping[str, str] | None = None,
@@ -160,6 +171,7 @@ class Graph:
     def _send(self, method: str, path: str, *,
               params: Mapping[str, str] | None = None,
               json: Any = None,
+              content: bytes | None = None,
               headers: Mapping[str, str] | None = None) -> httpx.Response:
         method = method.upper()
         attempt = 0
@@ -168,7 +180,8 @@ class Graph:
             resp: httpx.Response | None = None
             try:
                 resp = self._client.request(
-                    method, path, params=params, json=json, headers=hdrs)
+                    method, path, params=params, json=json, content=content,
+                    headers=hdrs)
             except httpx.TransportError:
                 if method not in _IDEMPOTENT or attempt >= _MAX_RETRIES:
                     raise
