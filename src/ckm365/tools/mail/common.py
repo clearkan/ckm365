@@ -44,29 +44,48 @@ def require_draft(g: Graph, path: str, verb: str,
     return current
 
 
-# --- the compose region (CKM-42) -------------------------------------------
+# --- the compose region (CKM-42; marker rebuilt in CKM-48) -----------------
 #
 # A reply draft is three things stacked: OUR text, then (optionally) the
 # profile signature, then the quoted history Graph seeded. Only the first
 # is ours to rewrite, and HTML alone cannot tell the three apart — the
 # 2026-08-18 scripts guessed the boundary from a literal phrase in the
 # signature, which works exactly once. So whatever writes a draft body
-# FENCES what it wrote with HTML comments, and revise_draft/verify_message
-# read the fence back. Comments render as nothing in every mail client and
-# survive Graph's PATCH round trip; caller HTML carrying one is refused, so
-# the fence can never be forged from the inside.
+# FENCES what it wrote, and revise_draft/verify_message read the fence back.
+#
+# The fence is a pair of EMPTY SENTINEL DIVS carrying an id. It was a pair
+# of HTML COMMENTS until CKM-48, and that is why the compose loop never
+# once worked live: EXCHANGE STRIPS EVERY COMMENT INSIDE <body> when it
+# stores a body, so the fence was always gone by the time anything read it
+# back — revise_draft then prepended instead of replacing, silently, on
+# every draft ckm365 had ever made, and verify_message always reported
+# boundary "quote". Measured 2026-09-15 on both tenants, PATCH then GET:
+# an HTML comment and a conditional comment both vanish; an id, a class and
+# a data- attribute on a real element all survive verbatim. Empty divs are
+# what Graph itself uses to mark up a reply body (`<div id="appendonsend">`,
+# `<div id="divRplyFwdMsg">`), so Outlook is known to render them as
+# nothing. Caller HTML carrying one of our ids is refused, so the fence can
+# never be forged from the inside.
 
-BODY_MARK = "ckm365:body"
-SIGNATURE_MARK = "ckm365:signature"
+BODY_MARK = "ckm365-body"
+SIGNATURE_MARK = "ckm365-signature"
+
+
+def fence_open(mark: str) -> str:
+    return f'<div id="{mark}-start"></div>'
+
+
+def fence_close(mark: str) -> str:
+    return f'<div id="{mark}-end"></div>'
 
 
 def fence(mark: str, html: str) -> str:
-    return f"<!--{mark}-->{html}<!--/{mark}-->"
+    return fence_open(mark) + html + fence_close(mark)
 
 
 def fenced_region(content: str, mark: str) -> tuple[int, int] | None:
     """(start, end) of what sits INSIDE a fence, or None when unfenced."""
-    opener, closer = f"<!--{mark}-->", f"<!--/{mark}-->"
+    opener, closer = fence_open(mark), fence_close(mark)
     start = (content or "").find(opener)
     if start < 0:
         return None
@@ -77,10 +96,10 @@ def fenced_region(content: str, mark: str) -> tuple[int, int] | None:
 def unfenced(html: str | None, name: str) -> str:
     """Refuse caller HTML that carries our own markers."""
     value = html or ""
-    if "<!--ckm365:" in value or "<!--/ckm365:" in value:
+    if 'id="ckm365-' in value or "id='ckm365-" in value:
         raise ValueError(
             f"{name} must not contain ckm365's compose markers "
-            "(<!--ckm365:...-->): they fence the region revise_draft "
+            '(id="ckm365-..."): they fence the region revise_draft '
             "rewrites, and a forged one would make that region ambiguous")
     return value
 

@@ -132,10 +132,11 @@ What each one exists to stop you hand-rolling:
 - **`revise_draft`** replaces only the text you wrote. `update_draft`'s
   `body_html` replaces the WHOLE body, which on a reply throws away the
   quoted history Graph assembled; the tools fence their own region with
-  HTML comments (`<!--ckm365:body-->`, invisible in every mail client) and
-  `revise_draft` rewrites what is inside it. On a draft written elsewhere
-  it inserts at the top of the body and fences that, so the next revision
-  replaces properly.
+  empty sentinel divs (`<div id="ckm365-body-start">`, which render as
+  nothing) and `revise_draft` rewrites what is inside it. On a draft it
+  did not compose it REFUSES, because guessing is what CKM-48 was — pass
+  `insert_if_unfenced=True` for an Outlook-written draft to insert at the
+  top and fence that.
 - **`signature_html`** on the profile (`profiles.toml`) is appended below
   your text at draft creation — `signature=False` skips it for one call —
   and sits in its own fence, so revising the text above never disturbs it.

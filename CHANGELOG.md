@@ -3,13 +3,63 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
-## [Unreleased]
+## [2.7.0] — 2026-09-16
 
-Documentation only — no code, no version bump, no schema change. Three
-Graph behaviours found the hard way during a live agent-persona outbound
-cycle, written down where the next agent will hit them.
+Fixes the compose loop, which had never once worked against real Graph.
+
+### Fixed
+- **`revise_draft` prepended instead of replacing, on every draft ckm365
+  had ever composed** (CKM-48). The compose fence was a pair of HTML
+  comments, and EXCHANGE STRIPS EVERY COMMENT INSIDE `<body>` when it
+  stores a body — so the fence was gone the moment the draft was saved,
+  `revise_draft` found nothing to replace, and its "unfenced" fallback
+  inserted at the top instead. Twice in one session that left TWO complete
+  versions of a message in a client-facing draft, the stale one naming the
+  wrong attachment version. `verify_message` had been reporting it all
+  along as `boundary: "quote"`; nobody read it.
+  The fence is now a pair of empty sentinel divs
+  (`<div id="ckm365-body-start">`), modelled on the `appendonsend` marker
+  Graph itself uses. Measured on both tenants, PATCH then GET: comments and
+  conditional comments vanish; an `id`, a `class` and a `data-` attribute
+  all survive verbatim.
+- **`verify_message["signature"]` was always false** for a ckm365-applied
+  signature, same root cause — it keyed on the signature comment.
+- The defect was never reply-specific despite CKM-48's title:
+  `create_draft` and `create_forward_draft` fence through the same helper
+  and were equally affected.
+- **`verify_message["quoted_thread"]` was a false negative on any reply to
+  a PLAIN-TEXT original** — a separate defect, found while verifying the
+  above because one tenant's newest mail was HTML and the other's was
+  plain text. Graph seeds those two cases quite differently: an HTML
+  original gets `divRplyFwdMsg` and an `<hr>`, a plain-text one gets the
+  quote wrapped in `<div class="PlainText">` with `<br>` breaks and none of
+  the five markers `verify_message` knew. It reported "the quoted thread is
+  gone" on drafts whose quote was perfectly intact, which on a pre-send
+  check invites discarding a good draft.
+
+### Changed
+- **`revise_draft` now REFUSES a draft with no fence** rather than silently
+  inserting at the top. If it returns, it replaced. Pass the new
+  `insert_if_unfenced=True` for a draft ckm365 did not compose (one written
+  in Outlook), where inserting and fencing is the sensible thing. This is
+  the one behaviour change to the SemVer'd surface: a call that used to
+  succeed by producing a duplicated body now raises `ValueError`.
+
+### Verified
+- `scripts/draft-cycle-smoke.py` run live on BOTH tenants and passing for
+  the first time — `boundary=fence`, revision replaces in place, quoted
+  history and attachment round trip intact, draft discarded with a 404
+  confirming no residue. It printed `boundary=quote` and WRITE SMOKE FAILED
+  against 2.6.0, which is how the fix was confirmed rather than assumed.
+- New offline regression test whose PATCH mock STRIPS in-body comments the
+  way Exchange does. Every other mock in the suite echoes the body back
+  unchanged, which is exactly why 153 green tests never saw this. Confirmed
+  the new test fails against the old comment fence and passes against the
+  new one. 155 passed, 15 skipped.
 
 ### Documented
+Three Graph behaviours found the hard way during a live agent-persona
+outbound cycle, written down where the next agent will hit them.
 - **Graph will not let you set `In-Reply-To`/`References` on a draft**
   (`400 InvalidInternetMessageHeader`, `x-` prefixes only) — so threading
   cannot be added after a draft is created, and an agent persona replying
@@ -58,7 +108,10 @@ Graph scope, no consent prompt, no tenant-wide operation.
   mail client), and `revise_draft` replaces what is inside the body fence.
   On an unfenced draft — written in Outlook, or created before this
   version — it inserts at the top of `<body>` and fences that, so the next
-  revision replaces properly. Caller HTML containing a marker is refused,
+  revision replaces properly.
+  **This never worked. See 2.7.0 (CKM-48): Exchange strips HTML comments
+  inside `<body>`, so the fence was gone the moment it was stored and
+  every revision took the insert path.** Caller HTML containing a marker is refused,
   so the fence cannot be forged from the inside.
 - **`signature_html`** on a profile in `profiles.toml` (max 8 KB, TOML
   multi-line literal) — appended below your text by `create_reply_draft`,

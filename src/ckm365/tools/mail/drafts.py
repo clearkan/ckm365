@@ -11,6 +11,9 @@ text we wrote can be found again: revise_draft rewrites what is inside
 the body fence and leaves the signature and the quoted history exactly
 where Graph put them. The profile's signature_html rides along at
 creation, so it stops being a literal pasted into a script (CKM-42).
+The fence is a pair of empty sentinel DIVS; it was HTML comments until
+CKM-48 found that Exchange strips those on store, which had silently
+broken every revision ckm365 ever made — see common.py.
 """
 
 import logging
@@ -174,6 +177,7 @@ def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
 
 
 def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
+                 insert_if_unfenced: bool = False,
                  account: str | None = None,
                  mailbox: str | None = None) -> Draft:
     """Rewrite the text YOU wrote in a draft, keeping the quoted history and
@@ -189,12 +193,18 @@ def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
     contents, not an addition to it. Subject and recipients are not touched
     here; that is update_draft's job. Refuses non-draft messages.
 
-    On a draft with no fence — one composed in Outlook, or created before
-    this version — the text is inserted at the TOP of the body instead and
-    fenced there, so nothing below it is disturbed and the NEXT revision
-    replaces it properly. That first call therefore adds rather than
-    replaces: check the result (or verify_message) before assuming
-    otherwise.
+    On a draft with no fence this REFUSES rather than guessing, because
+    guessing is what CKM-48 was: the fallback used to insert at the top,
+    which on a draft that already held a version of the message left TWO
+    complete versions stacked in a client-facing draft, the stale one still
+    naming the wrong attachment. If it returns, it replaced.
+
+    Pass insert_if_unfenced=True for a draft ckm365 did not compose — one
+    written in Outlook, or created before v2.7.0 — where inserting at the
+    top and fencing it is the sensible thing. Re-read it afterwards: that
+    call ADDS. If instead the draft is ckm365's own and simply wrong, the
+    cheap fix is discard_draft then create_reply_draft again; to replace
+    the whole body including the quote, that is update_draft.
     """
     ctx.require_write()
     new_html = unfenced(body_html, "body_html")
@@ -208,8 +218,17 @@ def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
     if region:
         start, end = region
         merged = content[:start] + new_html + content[end:]
-    else:
+    elif insert_if_unfenced:
         merged = _prepend(content, fence(BODY_MARK, new_html))
+    else:
+        raise ValueError(
+            "this draft carries no ckm365 compose fence, so there is no "
+            "region to replace and revising it would ADD a second copy of "
+            "the message rather than update it. Pass "
+            "insert_if_unfenced=True to insert at the top and fence it "
+            "(right for a draft composed in Outlook), or discard_draft and "
+            "create the reply again, or use update_draft to replace the "
+            "whole body including the quoted history.")
     patched = g.patch(path, json={"body": _body(merged)},
                       params={"$select": Draft.SELECT},
                       headers=_etag_header(data))

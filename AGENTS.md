@@ -131,13 +131,33 @@ breaking change — `tests/test_offline.py` carries the import contract.
   reload-before-access + flock; never bypass Auth's helpers.
 - `createReply` with a `body` replaces Graph's quoted history — seed first,
   then PATCH the top (`_insert_top`), with If-Match.
-- Our own text in a draft body is FENCED with HTML comments
-  (`common.BODY_MARK`/`SIGNATURE_MARK`, CKM-42) because HTML alone cannot
-  tell our text, the signature and the quoted history apart. The
-  2026-08-18 scripts guessed the boundary from a literal phrase inside the
-  signature, which works exactly once. `revise_draft` rewrites inside the
-  fence; `verify_message` reads it back and SAYS (`boundary`) when it had
-  to fall back to guessing.
+- EXCHANGE STRIPS EVERY HTML COMMENT INSIDE `<body>` when it stores a
+  message body. Measured 2026-09-15 on both tenants, PATCH then GET: a
+  comment and a conditional comment both vanish; an `id`, a `class` and a
+  `data-` attribute on a real element all survive verbatim. This is not a
+  curiosity — it silently broke the whole compose loop for four weeks
+  (CKM-48). Never mark up a body with a comment you intend to read back.
+- Our own text in a draft body is FENCED with a pair of empty sentinel
+  DIVS (`common.BODY_MARK`/`SIGNATURE_MARK`, CKM-42, marker rebuilt in
+  CKM-48) because HTML alone cannot tell our text, the signature and the
+  quoted history apart. The 2026-08-18 scripts guessed the boundary from a
+  literal phrase inside the signature, which works exactly once.
+  `revise_draft` rewrites inside the fence and REFUSES when there is none
+  (`insert_if_unfenced=True` opts back in, for an Outlook-written draft);
+  `verify_message` reads it back and SAYS (`boundary`) which it used.
+- Graph seeds a reply to a PLAIN-TEXT original in a completely different
+  shape from an HTML one: no `divRplyFwdMsg`, no `<hr>`, no `<blockquote>`,
+  just the quote in `<div class="PlainText">` with `<br>` breaks. Anything
+  detecting quoted history has to know both (`verify.py:_QUOTE_MARKS`).
+  Test mailboxes differ in which they hold, so this shows up on one tenant
+  and not the other — check both before believing a quote-detection change.
+- Offline mocks that ECHO a PATCHed body back unchanged cannot see any of
+  this, which is how 153 green tests sat on top of a loop that had never
+  once worked live. `tests/test_mail_compose.py` now carries one mock that
+  models the store instead of echoing it. When a tool's correctness depends
+  on what Graph does to what you wrote, the mock has to model that, and the
+  live check is not optional — `scripts/draft-cycle-smoke.py` prints
+  `boundary=` and would have said `quote` on day one.
 - Graph reports `hasAttachments: false` for a message whose only
   attachments are INLINE (a signature image, a pasted screenshot), so
   never skip the attachment listing on the strength of that flag —

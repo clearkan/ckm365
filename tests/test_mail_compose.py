@@ -10,6 +10,7 @@ that leaked in. Fixtures are fake ids and *.example addresses throughout.
 """
 
 import json
+import re
 
 import httpx
 import pytest
@@ -17,7 +18,8 @@ import pytest
 from ckm365.config import ConfigError, Profile, load_profiles
 from ckm365.graph import Graph
 from ckm365.tools import Ctx, WriteDisabled, mail
-from ckm365.tools.mail.common import BODY_MARK, SIGNATURE_MARK, fence
+from ckm365.tools.mail.common import (BODY_MARK, SIGNATURE_MARK, fence,
+                                      fence_open)
 
 MAILBOX = "user@tenant-a.example"
 SIGNATURE = ('<p><b>Ops</b></p><p><a href="https://example.invalid">example</a></p>')
@@ -104,9 +106,10 @@ def test_create_reply_draft_seeds_then_fences_body_and_signature():
     assert seen[0][1].endswith("/messages/m1/createReplyAll")
     patched = json.loads(seen[2][2])["body"]["content"]
     assert patched == ("<html><body>"
-                       f"<!--{BODY_MARK}--><p>Hello</p><!--/{BODY_MARK}-->"
-                       f"<!--{SIGNATURE_MARK}-->{SIGNATURE}"
-                       f"<!--/{SIGNATURE_MARK}-->{QUOTE}</body></html>")
+                       + fence(BODY_MARK, "<p>Hello</p>")
+                       + fence(SIGNATURE_MARK, SIGNATURE)
+                       + f"{QUOTE}</body></html>")
+    assert "<!--" not in patched  # CKM-48: Exchange strips in-body comments
     assert draft.body.content == patched
 
 
@@ -131,18 +134,18 @@ def test_create_draft_fences_body_and_appends_signature():
     mail.create_draft(ctx, to=["other-user@tenant-b.example"], subject="s",
                       body_html="<p>Hi</p>")
     content = json.loads(seen[0][2])["body"]["content"]
-    assert content == (f"<!--{BODY_MARK}--><p>Hi</p><!--/{BODY_MARK}-->"
-                       f"<!--{SIGNATURE_MARK}-->{SIGNATURE}"
-                       f"<!--/{SIGNATURE_MARK}-->")
+    assert content == (fence(BODY_MARK, "<p>Hi</p>")
+                       + fence(SIGNATURE_MARK, SIGNATURE))
+    assert "<!--" not in content  # CKM-48: Exchange strips in-body comments
 
 
 def test_caller_html_may_not_forge_the_fence():
     ctx = _ctx(lambda r: httpx.Response(200, json={}))
     with pytest.raises(ValueError, match="compose markers"):
         mail.create_draft(ctx, to=["a@tenant-b.example"], subject="s",
-                          body_html=f"<!--{BODY_MARK}-->sneaky")
+                          body_html=f'<div id="{BODY_MARK}-start"></div>sneaky')
     with pytest.raises(ValueError, match="compose markers"):
-        mail.revise_draft(ctx, "d1", f"<!--/{BODY_MARK}-->")
+        mail.revise_draft(ctx, "d1", f"<div id='{BODY_MARK}-end'></div>")
 
 
 # --- revise_draft ----------------------------------------------------------
@@ -178,10 +181,8 @@ def test_revise_draft_sends_if_match_from_the_etag_it_read():
     assert etag_seen["if-match"] == 'W/"1"'
 
 
-def test_revise_draft_on_an_unfenced_draft_inserts_at_the_top():
-    """A draft written in Outlook has no fence: insert inside <body> (so the
-    quote below is untouched) and fence it, so the NEXT revision replaces."""
-    handler, seen = _recorder([
+def _unfenced_draft():
+    return _recorder([
         (lambda r: r.method == "GET",
          httpx.Response(200, json=_draft(
              f"<html><body><p>typed by hand</p>{QUOTE}</body></html>"))),
@@ -189,10 +190,65 @@ def test_revise_draft_on_an_unfenced_draft_inserts_at_the_top():
          lambda r: httpx.Response(200, json=_draft(
              json.loads(r.content)["body"]["content"]))),
     ])
-    draft = mail.revise_draft(_ctx(handler), "d1", "<p>added</p>")
+
+
+def test_revise_draft_refuses_an_unfenced_draft_by_default():
+    """CKM-48: the silent insert put TWO complete versions of a message in a
+    client-facing draft. Refusing is recoverable; a duplicated body is not."""
+    handler, seen = _unfenced_draft()
+    with pytest.raises(ValueError, match="no ckm365 compose fence"):
+        mail.revise_draft(_ctx(handler), "d1", "<p>added</p>")
+    assert [method for method, _, _ in seen] == ["GET"]  # nothing was written
+
+
+def test_revise_draft_inserts_at_the_top_when_asked():
+    """A draft written in Outlook has no fence: opt in, and it is inserted
+    inside <body> (so the quote below is untouched) and fenced, so the NEXT
+    revision replaces."""
+    handler, seen = _unfenced_draft()
+    draft = mail.revise_draft(_ctx(handler), "d1", "<p>added</p>",
+                              insert_if_unfenced=True)
     assert draft.body.content == (
-        f"<html><body><!--{BODY_MARK}--><p>added</p><!--/{BODY_MARK}-->"
-        f"<p>typed by hand</p>{QUOTE}</body></html>")
+        "<html><body>" + fence(BODY_MARK, "<p>added</p>")
+        + f"<p>typed by hand</p>{QUOTE}</body></html>")
+
+
+def test_compose_loop_survives_a_graph_that_strips_html_comments():
+    """THE CKM-48 REGRESSION TEST — and the reason offline mocks missed it.
+
+    Exchange deletes every comment inside <body> when it stores a body
+    (measured on both tenants, 2026-09-15: comments and conditional
+    comments vanish; an id, a class or a data- attribute on a real element
+    survives verbatim). The fence used to BE a comment pair, so it never
+    survived being written: revise_draft found nothing to replace and
+    prepended instead, silently, on every draft ckm365 had ever composed.
+
+    Every other mock in this file echoes the PATCHed body back unchanged,
+    which is precisely why 153 green tests could not see it. This one
+    models the store, so a fence that cannot survive real Graph fails here.
+    """
+    stored = {"content": f"<html><body>{QUOTE}</body></html>"}
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(201, json={"id": "d1", "isDraft": True})
+        if "/attachments" in str(request.url):
+            return httpx.Response(200, json={"value": []})
+        if request.method == "PATCH":
+            body = json.loads(request.content)["body"]["content"]
+            stored["content"] = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+        return httpx.Response(200, json=_draft(stored["content"]))
+
+    ctx = _ctx(handler, signature_html=SIGNATURE)
+    mail.create_reply_draft(ctx, "m1", "<p>first</p>")
+    assert fence_open(BODY_MARK) in stored["content"]  # the fence was kept
+
+    mail.revise_draft(ctx, "d1", "<p>second</p>")
+    assert "first" not in stored["content"]        # replaced, NOT prepended
+    assert stored["content"].count(fence_open(BODY_MARK)) == 1
+    assert QUOTE in stored["content"] and SIGNATURE in stored["content"]
+    assert mail.verify_message(ctx, "d1")["boundary"] == "fence"
+    assert mail.verify_message(ctx, "d1")["signature"] is True
 
 
 def test_revise_draft_refuses_non_drafts_and_needs_write():
@@ -362,6 +418,20 @@ def test_verify_message_says_when_the_boundary_was_guessed():
     bare = mail.verify_message(_verify_ctx("<p>no quote at all</p>"), "d1")
     assert bare["boundary"] == "whole-body"
     assert bare["quoted_thread"] is False
+
+
+def test_verify_message_sees_a_plain_text_original_s_quote():
+    """Graph seeds a reply to a PLAIN-TEXT original with none of the usual
+    markers — no divRplyFwdMsg, no <hr>, no blockquote — just
+    <div class="PlainText">. Found live 2026-09-15: quoted_thread read False
+    on a draft whose quote was perfectly intact, which is a false negative
+    on a pre-send check."""
+    plain = ('<html><body><div class="PlainText">'
+             "From: other-user@tenant-b.example<br>Q1 figures<br>"
+             "</div></body></html>")
+    result = mail.verify_message(_verify_ctx(plain), "d1")
+    assert result["quoted_thread"] is True
+    assert result["boundary"] == "quote"
 
 
 def test_verify_message_caps_the_text_it_returns():
