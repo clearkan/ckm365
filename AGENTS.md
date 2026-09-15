@@ -201,6 +201,19 @@ breaking change — `tests/test_offline.py` carries the import contract.
   anyway on VOLUME grounds: ~10.6-11 KB per row, ~11x a summary row.
   `get_message_headers` fetches it deliberately, 20 messages per `/$batch`,
   and curates before returning. `/$batch` sub-request URLs accept `$select`.
+- An attachment upload session answers its LAST chunk with a `Location`
+  header in OData FUNCTION form — `.../Attachments('AAMk...=')`, often
+  percent-encoded — not the `.../attachments/{id}` shape the rest of the API
+  uses. Feeding that last path segment straight back in returns `400
+  RequestBroker--ParseUri: unterminated string literal`, which does not
+  obviously mean "your id has brackets round it" (attachments.py parses both,
+  `tests/test_offline.py` pins all four spellings).
+- Graph documents each upload chunk as a multiple of 320 KiB, and CKM-43's
+  live workaround used a flat 4 MiB — which is NOT one (4 MiB / 320 KiB =
+  12.8) and worked twice anyway. So the rule is not enforced for attachment
+  sessions. `add_attachment` uses 12 x 320 KiB = 3.75 MiB regardless, which
+  satisfies the documented rule and sits just under the size already proven
+  live; do not "simplify" it back to a round 4 MiB.
 - Attachment `@odata.type` (`kind` on the model) rides along on a listing
   even when `$select` names five other fields — it is OData control
   information, not a property, so it cannot be selected and cannot be

@@ -5,7 +5,24 @@ All notable changes to ckm365 are documented here. Format follows
 
 ## [2.7.0] — 2026-09-16
 
-Fixes the compose loop, which had never once worked against real Graph.
+Fixes the compose loop, which had never once worked against real Graph, and
+lifts the attachment ceiling that blocked two client deliverables.
+
+### Added
+- **`add_attachment` now takes files up to 150 MB** (CKM-43), streaming
+  anything over 3 MB through a Graph upload session. ONE entry point: the
+  path is chosen by size and callers do not have to know which ran. The file
+  is read a chunk at a time straight off the disk and never base64'd, and
+  the size is taken with `stat()` rather than by reading the file, so an
+  oversized file is refused without being loaded.
+  The chunk PUTs go to the PRE-AUTHENTICATED `uploadUrl`, so they carry no
+  bearer and cannot use `Graph` — they have their own bounded retry and
+  resync to the `nextExpectedRanges` Graph reports rather than trusting our
+  own byte counter, which is the entire reason upload sessions exist. A
+  chunk that keeps failing raises with its byte offset instead of leaving a
+  half-uploaded attachment looking fine. `CKM365_ATTACH_ROOT` confines both
+  paths. Over the ceiling the error says whose limit it is — the complaint
+  that surfaced this was "in Outlook I can add up to 50 MB".
 
 ### Fixed
 - **`revise_draft` prepended instead of replacing, on every draft ckm365

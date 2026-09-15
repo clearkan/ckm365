@@ -31,6 +31,7 @@ scripts were reaching for. Look here before you reach for `Graph`:
 | pasting an HTML signature literal | `signature_html` on the profile, applied at draft creation |
 | `DELETE /messages/{id}` on a draft you abandoned | `discard_draft` (drafts only, goes to Deleted Items) |
 | `DELETE /messages/{id}/attachments/{id}` | `remove_attachment` |
+| `createUploadSession` + a chunk loop for a file over 3 MB | `add_attachment` — it picks the path by size, up to 150 MB (CKM-43) |
 | a draft that must be FROM a shared mailbox, or must thread from one | nothing yet — Recipe 4 below, and CKM-45 |
 | deleting a reply to re-seed it as a reply-all | `discard_draft` + `create_reply_draft(reply_all=True)` |
 | fetch + strip HTML + assert recipients/attachments/quote | `verify_message` (one read-tier call, before or after sending) |

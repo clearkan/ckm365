@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import urllib.parse
 import sys
 import threading
 
@@ -14,6 +15,7 @@ from ckm365.graph import GRAPH_BASE, Graph, GraphError, mailbox_path
 from ckm365.models import Event, Message
 from ckm365.tools import (Ctx, SendDisabled, WriteDisabled, bind, calendar,
                           mail, meetings, teams, tools_for)
+from ckm365.tools.mail import attachments
 
 
 class FakeAuth:
@@ -351,10 +353,159 @@ def test_add_attachment_gated_and_size_capped(tmp_path):
     small.write_text("hi")
     with pytest.raises(WriteDisabled):
         mail.add_attachment(_ctx(), "m1", str(small))
+    # A SPARSE file: 151 MB of apparent size, no bytes on disk. Only the
+    # ceiling is an error now (CKM-43) — and if add_attachment ever goes back
+    # to reading the file before checking its size, this test allocates
+    # 151 MB and says so.
+    huge = tmp_path / "huge.bin"
+    with huge.open("wb") as fh:
+        fh.truncate(151 * 1024 * 1024)
+    with pytest.raises(ValueError, match="tops out at"):
+        mail.add_attachment(_ctx(write_enabled=True), "m1", str(huge))
+
+
+def _session_ctx(monkeypatch, puts, *, put_response=None):
+    """A Graph that hands out an upload session, plus a fake client for the
+    chunk PUTs — those go to a pre-authenticated URL on ANOTHER host, so
+    MockTransport never sees them (that is the whole point of the seam)."""
+    def graph_handler(request):
+        url = str(request.url)
+        if url.endswith("/createUploadSession"):
+            return httpx.Response(200, json={
+                "uploadUrl": "https://upload.example.invalid/s1"})
+        if "/attachments/" in url and request.method == "GET":
+            return httpx.Response(200, json={
+                "id": "att1", "name": "big.bin", "size": 9, "isInline": False,
+                "@odata.type": "#microsoft.graph.fileAttachment"})
+        return httpx.Response(200, json={"id": "m1", "isDraft": True})
+
+    def put_handler(request):
+        puts.append((request.headers.get("content-range"),
+                     len(request.content),
+                     request.headers.get("authorization")))
+        if put_response:
+            return put_response(len(puts), request)
+        return httpx.Response(201, headers={
+            "location": "https://graph.microsoft.com/v1.0/users/me/"
+                        "messages/m1/attachments/att1"})
+
+    monkeypatch.setattr(
+        attachments, "_upload_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(put_handler)))
+    ctx = _ctx(write_enabled=True)
+    ctx._graphs["p"] = make_graph(graph_handler)
+    return ctx
+
+
+def test_add_attachment_streams_large_files_through_an_upload_session(
+        tmp_path, monkeypatch):
+    """CKM-43: one entry point, the path chosen by size. Blocked a client
+    deliverable twice, three weeks apart."""
+    monkeypatch.setattr(attachments, "_UPLOAD_CHUNK", 4)  # tiny, to get chunks
     big = tmp_path / "big.bin"
-    big.write_bytes(b"x" * (3 * 1024 * 1024 + 1))
-    with pytest.raises(ValueError, match="3 MB"):
-        mail.add_attachment(_ctx(write_enabled=True), "m1", str(big))
+    big.write_bytes(b"0123456789")  # 10 bytes over a 4-byte chunk = 3 chunks
+    monkeypatch.setattr(attachments, "_MAX_DIRECT_ATTACHMENT", 4)
+    puts = []
+    ctx = _session_ctx(monkeypatch, puts)
+    att = attachments.add_attachment(ctx, "m1", str(big), mailbox="me@x.com")
+
+    assert att.id == "att1"
+    assert [r for r, _, _ in puts] == ["bytes 0-3/10", "bytes 4-7/10",
+                                       "bytes 8-9/10"]
+    assert [n for _, n, _ in puts] == [4, 4, 2]          # whole file, in order
+    assert all(auth is None for _, _, auth in puts)      # PRE-AUTHENTICATED
+
+
+def test_upload_session_resyncs_to_graphs_next_expected_range(
+        tmp_path, monkeypatch):
+    """Graph says where it actually wants the next byte; believing our own
+    counter instead is how a resumed upload corrupts a file."""
+    monkeypatch.setattr(attachments, "_UPLOAD_CHUNK", 4)
+    monkeypatch.setattr(attachments, "_MAX_DIRECT_ATTACHMENT", 4)
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"0123456789")
+
+    def put_response(n, request):
+        if n == 1:  # Graph took only 2 of our 4 bytes
+            return httpx.Response(202, json={"nextExpectedRanges": ["2-"]})
+        if n == 2:
+            return httpx.Response(202, json={"nextExpectedRanges": ["6-"]})
+        return httpx.Response(201, headers={
+            "location": "https://graph.microsoft.com/v1.0/users/me/"
+                        "messages/m1/attachments/att1"})
+
+    puts = []
+    ctx = _session_ctx(monkeypatch, puts, put_response=put_response)
+    attachments.add_attachment(ctx, "m1", str(big), mailbox="me@x.com")
+    assert [r for r, _, _ in puts] == ["bytes 0-3/10", "bytes 2-5/10",
+                                       "bytes 6-9/10"]
+
+
+def test_upload_session_raises_with_the_offset_when_a_chunk_keeps_failing(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(attachments, "_UPLOAD_CHUNK", 4)
+    monkeypatch.setattr(attachments, "_MAX_DIRECT_ATTACHMENT", 4)
+    monkeypatch.setattr(attachments, "_CHUNK_RETRIES", 1)
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"0123456789")
+    puts = []
+    ctx = _session_ctx(monkeypatch, puts,
+                       put_response=lambda n, r: httpx.Response(503))
+    with pytest.raises(ValueError, match="bytes 0-3 of 10"):
+        attachments.add_attachment(ctx, "m1", str(big), mailbox="me@x.com")
+    assert len(puts) == 2  # the try plus one retry, then loud
+
+
+def test_add_attachment_picks_the_direct_path_on_the_boundary(
+        tmp_path, monkeypatch):
+    """Exactly at the cap is still one request; one byte over is a session."""
+    seen = {}
+
+    def handler(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"id": "m1", "isDraft": True})
+        seen["url"] = str(request.url)
+        return httpx.Response(201, json={
+            "id": "a1", "name": "edge.bin", "size": 3,
+            "@odata.type": "#microsoft.graph.fileAttachment"})
+
+    monkeypatch.setattr(attachments, "_MAX_DIRECT_ATTACHMENT", 8)
+    edge = tmp_path / "edge.bin"
+    edge.write_bytes(b"x" * 8)
+    ctx = _ctx(write_enabled=True)
+    ctx._graphs["p"] = make_graph(handler)
+    attachments.add_attachment(ctx, "m1", str(edge), mailbox="me@x.com")
+    assert seen["url"].endswith("/messages/m1/attachments")  # not a session
+
+
+def test_attach_root_confines_the_upload_session_path_too(
+        tmp_path, monkeypatch):
+    """The containment check must not be bypassed by the new branch."""
+    monkeypatch.setattr(attachments, "_MAX_DIRECT_ATTACHMENT", 4)
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"0123456789")
+    (tmp_path / "root").mkdir()
+    monkeypatch.setenv("CKM365_ATTACH_ROOT", str(tmp_path / "root"))
+    with pytest.raises(ValueError, match="CKM365_ATTACH_ROOT"):
+        attachments.add_attachment(_ctx(write_enabled=True), "m1",
+                                   str(outside), mailbox="me@x.com")
+
+
+def test_upload_session_location_header_parses_both_odata_shapes():
+    """Graph returns the finished attachment OData-function style —
+    Attachments('AAMk...='), not attachments/AAMk...= — and percent-encoded
+    at that. Feeding the raw last segment back in gives `400
+    RequestBroker--ParseUri: unterminated string literal`, which cost a live
+    round to recognise."""
+    base = "https://graph.microsoft.com/v1.0/users/me/messages/m1/"
+    for location, expected in [
+            (base + "Attachments('AAMkA9=')", "AAMkA9="),
+            (base + "Attachments(%27AAMkA9%3D%27)", "AAMkA9="),
+            (base + "attachments/AAMkA9=", "AAMkA9="),
+            (base + "attachments/AAMkA9=?$select=id", "AAMkA9=")]:
+        found = attachments._LOCATION_ID.search(
+            urllib.parse.unquote(location.split("?")[0]))
+        assert found and (found.group(1) or found.group(2)) == expected, location
 
 
 def test_add_attachment_respects_attach_root(tmp_path, monkeypatch):

@@ -13,7 +13,11 @@ import base64
 import logging
 import mimetypes
 import os
+import re
 from pathlib import Path
+from urllib.parse import unquote
+
+import httpx
 
 from ...graph import Graph, encode_segment as _seg
 from ...models import Attachment
@@ -24,8 +28,97 @@ from .disk import write_atomic, write_target
 log = logging.getLogger("ckm365")
 
 
-_MAX_DIRECT_ATTACHMENT = 3 * 1024 * 1024  # Graph direct-attach limit; bigger
-                                          # files need upload sessions (phase 2)
+_MAX_DIRECT_ATTACHMENT = 3 * 1024 * 1024  # Graph's cap on a contentBytes POST
+_MAX_SESSION_ATTACHMENT = 150 * 1024 * 1024  # Graph's upload-session ceiling
+# Graph documents the byte range of each chunk as a multiple of 320 KiB.
+# CKM-43's live workaround used a flat 4 MiB, which is NOT one (4 MiB /
+# 320 KiB = 12.8) and worked twice anyway — so the rule is not enforced for
+# attachment sessions, but there is no reason to rely on that. 12 x 320 KiB
+# = 3.75 MiB satisfies the documented rule and sits just under the size
+# already proven live.
+_UPLOAD_CHUNK = 12 * 320 * 1024
+_CHUNK_RETRIES = 4
+assert _UPLOAD_CHUNK % (320 * 1024) == 0
+
+_NEXT_RANGE = re.compile(r"^(\d+)")
+# Graph answers the last chunk with a Location header, and it is NOT the
+# path shape the rest of the API uses: it comes back OData function style,
+# .../Attachments('AAMk...='), not .../attachments/AAMk...=. Feeding the
+# raw last segment back in yields `400 RequestBroker--ParseUri:
+# unterminated string literal`, which does not obviously mean "your id has
+# brackets round it". Accept both shapes.
+_LOCATION_ID = re.compile(r"""[Aa]ttachments(?:\(['"]?([^'")]+)['"]?\)|/([^/?]+))/?$""")
+
+
+def _upload_client() -> httpx.Client:
+    """The chunk PUTs go to a pre-authenticated URL on another host, so they
+    deliberately do not use Graph's client (a bearer on them is wrong). That
+    also puts them outside MockTransport, so this is the seam the offline
+    tests replace — there is no other way to exercise the chunk loop without
+    a network."""
+    return httpx.Client(timeout=300.0)
+
+
+def _upload_in_chunks(g: Graph, path: str, source: Path, size: int) -> str:
+    """Stream a file to a draft through Graph's upload session, returning
+    the new attachment's id.
+
+    The uploadUrl Graph hands back is PRE-AUTHENTICATED: putting a bearer on
+    the chunk PUTs is wrong, so they cannot go through Graph and do not
+    inherit its retry policy. They get their own, which is the point of an
+    upload session — a 6 MB file on bad wifi will drop a chunk, and Graph
+    answers a successful PUT with nextExpectedRanges saying where it
+    actually wants the next byte. We resync to that rather than assuming our
+    own count is right, and a chunk that keeps failing raises with the byte
+    offset instead of leaving a half-uploaded attachment looking fine.
+
+    The file is read one chunk at a time and never base64'd — a 150 MB
+    attachment must not become a 200 MB string in memory.
+    """
+    session = g.post(path + "/attachments/createUploadSession",
+                     json={"AttachmentItem": {
+                         "attachmentType": "file",
+                         "name": source.name,
+                         "size": size}})
+    url = session["uploadUrl"]
+    location, sent = None, 0
+    with source.open("rb") as fh, _upload_client() as client:
+        while sent < size:
+            fh.seek(sent)
+            block = fh.read(_UPLOAD_CHUNK)
+            last = sent + len(block) - 1
+            for attempt in range(_CHUNK_RETRIES + 1):
+                try:
+                    resp = client.put(url, content=block, headers={
+                        "Content-Length": str(len(block)),
+                        "Content-Range": f"bytes {sent}-{last}/{size}"})
+                except httpx.TransportError:
+                    if attempt >= _CHUNK_RETRIES:
+                        raise
+                    continue
+                if resp.status_code in (200, 201, 202):
+                    break
+                if resp.status_code not in (408, 429, 500, 502, 503, 504) \
+                        or attempt >= _CHUNK_RETRIES:
+                    raise ValueError(
+                        f"upload session failed at bytes {sent}-{last} of "
+                        f"{size}: {resp.status_code}")
+            location = resp.headers.get("location") or location
+            nxt = (resp.json().get("nextExpectedRanges")
+                   if resp.status_code == 202 and resp.content else None)
+            match = _NEXT_RANGE.match(nxt[0]) if nxt else None
+            sent = int(match.group(1)) if match else last + 1
+    log.info("tool=add_attachment path=upload_session bytes=%d chunks=%d",
+             size, -(-size // _UPLOAD_CHUNK))
+    if not location:
+        raise ValueError("upload session finished without returning the "
+                         "attachment location; check the draft before retrying")
+    found = _LOCATION_ID.search(unquote(location.split("?")[0]))
+    if not found:
+        raise ValueError("upload session returned an unrecognised attachment "
+                         "location; the file is attached, so list_attachments "
+                         "will show it")
+    return found.group(1) or found.group(2)
 def attachments_of(g: Graph, mb: str, message_id: str) -> list[Attachment]:
     return pull(g, Attachment, message_path(mb, message_id, "/attachments"),
                 params={"$select": Attachment.SELECT}, top=100)
@@ -147,29 +240,46 @@ def download_attachment(ctx: Ctx, message_id: str, dest_path: str, *,
 def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
                    account: str | None = None,
                    mailbox: str | None = None) -> Attachment:
-    """Attach a local file to a DRAFT (max 3 MB). The file is read by the
+    """Attach a local file to a DRAFT, at any size up to 150 MB.
+
+    Files up to 3 MB go in one request; larger ones stream through a Graph
+    upload session, in chunks, straight off the disk. Which one runs is not
+    your problem — there is one entry point on purpose, and the only size
+    that is an error is one Graph itself cannot take.
+
+    The 150 MB ceiling is GRAPH's, not Outlook's: a mailbox may well accept
+    a larger message than this API will build. The file is read by the
     server process on this machine; refuses non-draft messages. If the
-    CKM365_ATTACH_ROOT env var is set, only files under that directory
-    can be attached."""
+    CKM365_ATTACH_ROOT env var is set, only files under that directory can
+    be attached, on both paths.
+    """
     ctx.require_write()
     source = Path(file_path).expanduser().resolve()
     root = os.environ.get("CKM365_ATTACH_ROOT")
     if root and not source.is_relative_to(Path(root).expanduser().resolve()):
         raise ValueError(f"attachment path is outside CKM365_ATTACH_ROOT "
                          f"({root}); refusing to read it")
-    data = source.read_bytes()
-    if len(data) > _MAX_DIRECT_ATTACHMENT:
-        raise ValueError("attachment exceeds the 3 MB direct-attach limit "
-                         "(upload sessions are not supported yet)")
+    size = source.stat().st_size  # stat, not read: a 150 MB file must not be
+    if size > _MAX_SESSION_ATTACHMENT:  # loaded just to be rejected
+        raise ValueError(
+            f"attachment is {size} bytes; Graph's upload session tops out at "
+            f"{_MAX_SESSION_ATTACHMENT} bytes ({_MAX_SESSION_ATTACHMENT // (1024 * 1024)} MB). "
+            "That is this API's ceiling, not your mailbox's — send a link "
+            "instead, or split the file deliberately rather than by accident.")
     g, mb = ctx.target(account, mailbox)
     path = message_path(mb, message_id)
     require_draft(g, path, "attach to")
+    if size > _MAX_DIRECT_ATTACHMENT:
+        new_id = _upload_in_chunks(g, path, source, size)
+        return Attachment.from_graph(
+            g.get(f"{path}/attachments/{_seg(new_id, 'attachment id')}",
+                  params={"$select": Attachment.SELECT}))
     payload = {
         "@odata.type": "#microsoft.graph.fileAttachment",
         "name": source.name,
         "contentType": mimetypes.guess_type(source.name)[0]
         or "application/octet-stream",
-        "contentBytes": base64.b64encode(data).decode("ascii"),
+        "contentBytes": base64.b64encode(source.read_bytes()).decode("ascii"),
     }
     created = g.post(path + "/attachments", json=payload)
     return Attachment.from_graph(created)
