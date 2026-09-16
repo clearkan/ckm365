@@ -3,7 +3,7 @@ title: revise_draft appends instead of replacing on create_reply_draft output
 column: done
 status: done
 created_at: '2026-09-14T14:05:00Z'
-updated_at: '2026-09-15T22:40:00Z'
+updated_at: '2026-09-16T00:55:00Z'
 assignees: []
 description: |-
   seanwy (2026-09-14): hit twice in one session, on drafts created minutes
@@ -90,4 +90,32 @@ history:
     PLAIN-TEXT original, because Graph seeds those with <div class="PlainText">
     and none of the five markers it knew.'
   event: moved
+- at: '2026-09-16T00:55:00Z'
+  by: claude
+  details: 'CORROBORATING FIELD REPORT, recovered. An unpushed commit sitting
+    only on a second dev box (dated 11 Sep, three days before this ticket was
+    filed here) reported the SAME defect independently from live client use -
+    revise_draft failed the same way THREE times on one external thread, each
+    failure leaving a draft with two full copies of the body. All three were
+    caught by eye; any one of them, sent, would have gone to 13 recipients
+    across five external organisations with the message duplicated. That is
+    the sharpest statement of the blast radius on record and it belongs with
+    this issue. The commit itself is not being pushed: its message names the
+    five organisations, which the public-repo rule forbids. It is preserved off-repo,
+    outside any repository.
+    Its four proposed options map onto what shipped: (1) test it properly,
+    asserting the OLD text is GONE rather than that the new text is present -
+    a test checking only the latter passes while the duplicate survives. The
+    regression test added here asserts exactly that ("first" not in the stored
+    body). (2) Raise instead of silently falling back to insert-at-top - that
+    is the behaviour change shipped in 2.7.0. (3) Return a "replaced" flag -
+    not needed once the default refuses, since a return now means it replaced.
+    (4) Withdraw the tool and document discard-and-recreate - not needed; the
+    tool works now, and discard-and-recreate costs the attachment and the cc.
+    It also flagged that update_draft''s docstring steers callers toward
+    revise_draft, "pointing them at the unreliable path". Left as is
+    deliberately: the steering was only wrong because the path was broken, and
+    it now points at a tool that either replaces correctly or refuses out
+    loud.'
+  event: updated
 version: 1
