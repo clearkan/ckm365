@@ -106,11 +106,16 @@ memory cost. Lead with this, not the 1.4 GB.
 `allow_send = false` IS A REAL LEVER BUT A BREAKING ONE — do not present
 it as cheap. It was written up here first as "the fastest risk reduction
 available", which was wrong, and the reporting session corrected it with
-numbers: send is in routine use, not dormant. Measured across every local
-transcript, `send_draft` shows 49 genuine `tool_use` invocations (the
-reporter counted 71 on a looser matcher; 72 `tool_result` blocks appear on
-the same lines, which is very likely what that number is — either way the
-conclusion is identical). Most recent: today. Turning the cap off would
+numbers: send is in routine use, not dormant.
+
+SETTLED FIGURES, strict JSON parse, both sessions independently reproducing
+the same result: **49 genuine `send_draft` invocations across 15 transcript
+files**. Most recent: today. An earlier 71/19 was a matcher bug — a loose
+`or` clause that matched any line naming a ckm365 tool, so `tool_result`
+lines counted as invocations. Worth keeping the shape of that mistake: 451
+lines merely CONTAIN the string against 49 real calls, so substring matching
+overcounts roughly 9x here. Note also that transcript files are not distinct
+sessions, because resuming duplicates history — so 15 is an upper bound. Turning the cap off would
 land as broken sends across a large part of the fleet, not as reclaimed
 dormant privilege.
 
@@ -143,8 +148,14 @@ profile from the first commit.
 ## Shape if it is ever approved
 
 Read-only shared daemon first, write and send left per-session. The usage
-data sharpens WHY this is the right shape: roughly 15-19 sessions of ~35
-have ever sent, yet all 18 live processes hold SEND scope unconditionally.
+data sharpens WHY this is the right shape, and it is a stronger argument
+than either session first stated it: **15 of the 44 transcripts that use
+ckm365 at all have ever sent — about a third — yet all 18 live processes
+hold SEND scope unconditionally.** Numerator and denominator are both
+measured with the same strict parse, which matters: an earlier version put a
+strict numerator over a loosely-counted denominator and made the ratio look
+like half. File-vs-session duplication inflates both sides similarly, so the
+RATIO is more trustworthy than either absolute number.
 The mismatch is not send-versus-no-send — it is that every session holds
 the capability whether or not it ever uses it. The split closes exactly
 that gap without breaking anyone: sessions that never send lose a privilege
