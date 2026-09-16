@@ -105,9 +105,7 @@ recommending across a tenant boundary.
 
 ## External landscape
 
-Being researched now: current Claude features (Claude Code scheduled routines,
-Cowork scheduled tasks, the Microsoft 365 connector), current ChatGPT features
-(scheduled Tasks, agent mode, connectors, custom MCP), and non-AI baselines
-(Power Automate, native Outlook options, third-party sync services), each
-checked against the consent wall above. Findings and a recommendation will be
-added as a comment and folded into this body.
+Not researched. A research pass on current Claude and ChatGPT scheduling and
+connector features, and on non-AI baselines, was started and then stopped by
+seanwy before it reported, so nothing from it is recorded here. Relaunch
+deliberately if that comparison is still wanted.
