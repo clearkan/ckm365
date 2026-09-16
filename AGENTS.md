@@ -37,6 +37,12 @@ session; everything else worth knowing is one hop from here.
    a new dep needs the owner's explicit sign-off first.
 3. Offline tests (`uv run pytest tests/ -q`) — httpx.MockTransport, no
    network, must stay green. Add tests for new behavior incl. gating.
+   Then `uv run python scripts/check-identifiers.py` — it must print "no
+   identifiers found" before you commit. Also run it over your commit
+   MESSAGES (`--rev-range origin/main..HEAD`), which is the half that costs
+   a history rewrite when it is wrong. It exists because the public-repo
+   rule was breached TWICE in one day by an agent that had just written the
+   rule down; a check that runs beats a rule you must remember.
 4. Live verification — offline mocks have missed real Graph behavior
    before (see gotchas): run the relevant live check yourself:
    - `uv run ckm365 doctor` — config/login/consent health
