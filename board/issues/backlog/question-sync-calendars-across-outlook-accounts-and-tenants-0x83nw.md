@@ -21,9 +21,12 @@ This issue records the answer. It is a question, not a build request.
 
 ## Short answer so far
 
-**Within tenants where the user can get calendar consent, yes — as a one-way
-busy-block mirror, today, with no code change and no LLM.** Two-way sync is
-not supported. And the premise "as long as they use their personal access
+**Within tenants where the user can get calendar consent, yes — today, with
+no code change and no LLM.** A one-way busy-block mirror is the simple case
+and needs only the existing tools. Two-way sync is also reachable, through
+the Graph escape hatch rather than the tool list, but is materially harder
+to get right (echo prevention, conflict handling) and not worth it unless
+genuinely needed. And the premise "as long as they use their personal access
 model" breaks down in exactly the case that motivates the question: a CLIENT
 tenant.
 
@@ -66,22 +69,32 @@ Works for a ONE-WAY busy-block mirror:
 - A plain Python script can do all of this through the supported programmatic
   API — no MCP server, no Claude session, no LLM.
 
-Gaps for anything beyond that:
+Beyond the tools, the capability is broader than the tool list suggests. A
+sync is a SCRIPT, and a script gets the whole Graph surface the token allows
+through the supported escape hatch (`ctx.graph()` plus `Graph.request`,
+docs/graph-direct.md). `Calendars.ReadWrite` covers all of the following:
 
-- **No `delete_event`.** A mirror cannot be removed when its source is deleted
-  or cancelled; the best available is `update_event` retitling it, which is
-  poor. This is the single biggest gap.
-- **No invisible marker.** No `singleValueExtendedProperties`, categories or
-  `transactionId`. So a script cannot tag its own copies without writing into
-  a visible field (subject or body). That makes idempotency ("find the copy I
-  made last time") brittle, and makes TWO-WAY sync unsafe — A->B->A echo needs
-  a reliable way to recognise your own copies.
-- **No `showAs` / `sensitivity`** on create or in the selected fields. A
-  generic subject such as "Busy" avoids leaking details, so this is a
-  nice-to-have — but rules like "skip events marked free or private" cannot
-  be expressed without reading those fields.
-- **No calendar delta.** `watch.py` is mail-only, so a sync polls a date
-  window each run. Fine at this scale.
+- **Delete events: works today, proven.** There is no `delete_event` TOOL,
+  but sessions have deleted events with a direct Graph `DELETE` on
+  `/events/{id}` five times across four transcripts. So a mirror CAN be
+  removed when its source is deleted or cancelled.
+- **An invisible marker: reachable, not live-tested here.** Graph's
+  `singleValueExtendedProperties` can be set on create and filtered on read
+  through the same wrapper. That is what makes idempotency ("find the copy I
+  made last time") reliable, and what makes TWO-WAY sync possible at all —
+  A->B->A echo is prevented by skipping anything carrying your own marker.
+- **`showAs` / `sensitivity`: reachable, not live-tested here.** Set them in
+  the create payload to make a mirror a private Busy block, and read them to
+  honour rules like "skip events marked free or private".
+- **Calendar delta: reachable, not live-tested here.** `calendarView/delta`
+  is a plain GET. Polling a date window is simpler and fine at this scale.
+
+What is genuinely missing is only the MCP TOOL surface for these — no
+`delete_event`, no marker or `showAs` parameters on `create_event`. That
+matters only if the sync is driven by an LLM calling tools rather than by a
+script. docs/graph-direct.md rule 5 applies: a direct call is a workaround,
+not a capability, so if the LLM-driven route is ever wanted, those are the
+tool gaps to file.
 
 ## Confidentiality, before anyone builds it
 
