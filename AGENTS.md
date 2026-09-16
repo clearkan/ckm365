@@ -72,6 +72,14 @@ session; everything else worth knowing is one hop from here.
   a real engagement, write the issue, then re-read it once asking only
   "would a stranger learn who this was about?". Keep every number, error
   code and failure mode; those are the value. Drop the names.
+- The same rule covers INFRASTRUCTURE, and it covers COMMIT MESSAGES. A dev
+  box's hostname went into a commit message on the public repo on
+  2026-09-16, by an agent that had spent the same session enforcing the
+  rule — because it read the list above as an enumeration and a hostname
+  matched no entry. Server names, box names, internal DNS, IPs and absolute
+  paths exposing a machine are all identifiers. Check the commit message,
+  not just the diff: a board file is one edit away from clean, a pushed
+  commit message needs a history rewrite.
 - Never log or print message bodies, subjects of real mail, or tokens —
   ids, counts, and truncated ids only (see `bind()` in tools/context.py
   and the smoke scripts for the pattern).

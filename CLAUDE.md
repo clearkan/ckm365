@@ -29,6 +29,14 @@ start; ask seanwy if missing).
 - **Anything touching a tenant** (app registrations, consent, RBAC, mailbox
   creation) is interactive — propose exact commands, seanwy runs/approves.
 - **No secrets in repo**; never log message bodies or tokens.
+- **No real identifiers in the repo, and that includes INFRASTRUCTURE.**
+  Not just addresses, tenant names, GUIDs and internal project names —
+  server hostnames, box names, internal DNS names, IPs and absolute paths
+  that expose a machine or a naming convention. This is spelled out
+  because the enumeration was read as exhaustive once and a dev box's
+  hostname went into a commit message on the public repo (2026-09-16). The
+  rule applies to COMMIT MESSAGES and board files exactly as it applies to
+  code — a commit message is the harder one to retract.
 
 ## Task board
 
