@@ -103,12 +103,32 @@ of them from SEND scope to `Mail.Read`/`Calendars.Read`. That is a
 reduction in standing privilege, and it would be worth doing at EQUAL
 memory cost. Lead with this, not the 1.4 GB.
 
-SEPARATE AND CHEAPER, available today without building anything: setting
-`allow_send = false` on any profile that does not need to send immediately
-downscopes every session using it, because the cap is checked both when
-scopes are chosen and again in `Ctx.require_send`. That is a config change
-on the owner's box, not a repo change, and it is his call — noted here
-because it is the fastest risk reduction available and needs no daemon.
+`allow_send = false` IS A REAL LEVER BUT A BREAKING ONE — do not present
+it as cheap. It was written up here first as "the fastest risk reduction
+available", which was wrong, and the reporting session corrected it with
+numbers: send is in routine use, not dormant. Measured across every local
+transcript, `send_draft` shows 49 genuine `tool_use` invocations (the
+reporter counted 71 on a looser matcher; 72 `tool_result` blocks appear on
+the same lines, which is very likely what that number is — either way the
+conclusion is identical). Most recent: today. Turning the cap off would
+land as broken sends across a large part of the fleet, not as reclaimed
+dormant privilege.
+
+AND THE OBVIOUS REFINEMENT DOES NOT RESCUE IT. The reporter asked whether
+the sends were concentrated in one profile, which would have made a
+per-profile `allow_send = false` on the others cheap and non-breaking.
+Correlated each call against its `account` argument: they are not
+concentrated. `intixa` 26 calls over 5 sessions, `axomem` 23 calls over 10
+sessions. Both device_code profiles send actively, and the third
+(`intixa-app`) is already `allow_send = false` and app-only. There is no
+quiet profile to close.
+
+So the honest framing for the owner is a choice between two real options,
+not between a free one and an expensive one:
+  (a) `allow_send = false` — immediate, no code, BREAKS live workflows
+      with ~49-71 calls behind them.
+  (b) the read-only-shared / opt-in-write split — non-breaking, gets most
+      of the same privilege reduction, costs building it.
 
 ## Per-profile keying is required TODAY, not future-proofing
 
@@ -122,8 +142,12 @@ profile from the first commit.
 
 ## Shape if it is ever approved
 
-Read-only shared daemon first, write and send left per-session. That
-captures most of the memory (most sessions never write) while making the
-blast radius strictly smaller than today, not larger. Concurrency for
+Read-only shared daemon first, write and send left per-session. The usage
+data sharpens WHY this is the right shape: roughly 15-19 sessions of ~35
+have ever sent, yet all 18 live processes hold SEND scope unconditionally.
+The mismatch is not send-versus-no-send — it is that every session holds
+the capability whether or not it ever uses it. The split closes exactly
+that gap without breaking anyone: sessions that never send lose a privilege
+they never exercised, and the ones that do send keep working by opting in. Concurrency for
 `wait_for_message` has to be solved before any of it. Re-measure with PSS
 afterwards; the reporter offered to.
