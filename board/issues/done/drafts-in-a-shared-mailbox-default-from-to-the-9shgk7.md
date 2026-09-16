@@ -1,0 +1,130 @@
+---
+type: "issue"
+title: "Drafts in a shared mailbox default from= to the signed-in user — sent mail goes out under the wrong name"
+created: "2026-08-29T04:05:00Z"
+resource: "oif:ckm/9shgk7"
+aliases: ["CKM-45"]
+kind: "bug"
+priority: "high"
+requested_by: "human:seanwy"
+tags: ["mail", "drafts", "shared-mailbox", "persona"]
+---
+
+LIVE DEFECT, reported by seanwy 2026-08-29: a draft created via
+create_draft with mailbox=<agent persona shared mailbox> carried
+from=<the signed-in user>, and when that draft was later sent, the mail
+went out under the signed-in user's name instead of the persona's. The
+persona's authorship disclosure workflow depends on the From being the
+shared mailbox, so this silently breaks the whole pattern.
+
+ROOT CAUSE: Graph populates from/sender on a draft as the
+authenticated user by default, even when the draft is created in a
+shared mailbox the user has Send As rights over. create_draft (and
+create_reply_draft / create_forward_draft) expose no from/sender
+parameter and never set one, so the default stands.
+
+FIX SHAPE (pick one, or layer):
+1. When mailbox= is an explicit shared mailbox different from the
+   signed-in user, set "from": {"emailAddress": {"address": mailbox}}
+   on the draft at creation. This matches the obvious intent — a draft
+   placed in a mailbox should send as that mailbox — and needs Send As
+   (or Send on Behalf, which Graph maps via sender vs from) to succeed
+   at send time.
+2. Expose an explicit from= parameter on the draft tools for the
+   rarer cross-mailbox cases, validated against mailbox=.
+3. verify_message should surface the From line prominently so a
+   wrong-author draft is caught at review, not after send.
+
+WORKAROUND until built: after create_draft, PATCH the draft with the
+from address via the graph-direct escape hatch (write tier). Used
+live on 2026-08-29 for the meeting-summary draft.
+
+TEST: create a draft in the persona shared mailbox, assert from ==
+the shared mailbox in the draft AND in the delivered copy's headers
+(send-cycle test rig from CKM-40 covers the delivery half).
+
+RELATED, FOUND 2026-08-30 — THE PERSONA CANNOT REPLY IN-THREAD.
+Counterparties write to the human's mailbox, not the persona's. So a
+persona reply has to be composed in the persona mailbox, where Graph has
+no original to seed from — and create_reply_draft only works against a
+message that exists in the mailbox being written to. Composing it with
+create_draft and an "RE: ..." subject loses In-Reply-To/References, so
+the reply starts a new conversation in the counterparty's client.
+VERIFIED DEAD END: PATCHing the headers onto the draft is refused —
+Graph 400 InvalidInternetMessageHeader, "header name 'In-Reply-To'
+should start with 'x-'". Only x- prefixed custom headers are settable.
+So today the choice is forced and neither option is clean:
+  (a) compose in the persona mailbox  -> right author, broken threading
+  (b) create_reply_draft in the human's mailbox, then PATCH from ->
+      right author AND threading, but the draft sits in the human's
+      Drafts, not the persona's, and the sent copy lands in the human's
+      Sent Items.
+(b) is probably the better default once from= is supported at creation,
+since threading is visible to the counterparty and the drafts folder is
+only visible to us. Worth an explicit `as_mailbox=` parameter on
+create_reply_draft that composes from one mailbox while replying to a
+message in another, so the caller does not have to choose.
+
+SOLVED 2026-08-30 — MIME IMPORT IS THE ANSWER, AND IT IS THE TOOL SHAPE.
+Graph refuses In-Reply-To on a JSON PATCH, but PRESERVES it when the
+message arrives as MIME. Verified end to end:
+  POST /users/{mbx}/mailFolders/drafts/messages
+  Content-Type: text/plain
+  body: base64(RFC-5322 message)
+A draft built that way lands in the PERSONA's Drafts with the persona as
+From, In-Reply-To/References pointing at the counterparty's real
+Message-ID, and the quoted history inline. Both horns of the dilemma go
+away. (Import also preserves Message-ID exactly, so importing the
+counterparty's own message into the persona mailbox works too — but it
+arrives isDraft:true and createReply then fails with
+ErrorInvalidReferenceItem, so composing the reply MIME directly is the
+route that works.)
+
+TRAP, COST US A ROUND: encode the HTML part as BASE64, not
+quoted-printable. Python's EmailMessage defaults to QP, whose soft line
+breaks (=\r\n) came back through Exchange mangled — words silently lost
+characters ("Sean set the brief" -> "Sean set =he brief"). The corruption
+is invisible in the tool's own draft listing and only shows on close
+reading of the body. Use cte="base64" and assert on the stored body
+before handing the draft over.
+
+VERIFIED IN THE WILD 2026-08-30: a draft built this way was reviewed and
+SENT by the owner. The delivered copy carries from=sender=the shared
+mailbox, and In-Reply-To/References intact against the counterparty's
+real Message-ID — so Exchange preserves both through the send, not just
+in the draft. The technique is proven end to end.
+
+THIRD BUG IN THE SAME CLUSTER — export_message mis-tags persona mail as
+inbound. The direction heuristic is `sender == mailbox` (export.py ~L77),
+but a Send-As copy lands in the HUMAN's Sent Items with sender = the
+SHARED mailbox, so exporting it yields tags: [email, inbound] on a
+message the persona itself sent. Anything filtering the archive on that
+tag silently gets the wrong set. Fix: treat a message whose
+parentFolderId is the mailbox's sentitems folder as outbound regardless
+of sender (authoritative), and fall back to the sender comparison only
+outside that folder. Note the same root cause as the rest of this issue:
+the tooling assumes one mailbox == one identity.
+
+PROPOSED TOOL: create_persona_reply(message_id, as_mailbox, body_html,
+reply_all=...) — reads the original from wherever it lives, builds the
+MIME with the threading chain and the persona From, base64 CTE, imports
+to the persona's Drafts, returns the Draft. That is the whole workaround
+in one call, and it also fixes the plain create_draft from= gap above.
+
+IMPLEMENTATION NOTE (2026-09-15, from a design review of Recipe 4):
+whoever builds create_persona_reply will need Graph.request() to carry a
+RAW body. It accepts json= only, and the MIME import body is base64 bytes
+with Content-Type: text/plain — which is why the documented recipe has to
+drop to a bare httpx.post. A tool cannot do that and stay testable: the
+whole offline suite runs through Graph(transport=MockTransport). Minimal
+shape is a `content: bytes | None = None` pass-through on request()
+threaded to _send(), exclusive with json=, plus one offline test asserting
+the body and Content-Type reach the transport. Deliberately NOT done as
+part of the Recipe 4 documentation commit, which is doc-only and carries
+no version bump; it belongs to this issue's implementation.
+The retry policy needs no change: POST is correctly excluded from
+_IDEMPOTENT (graph.py:39), so neither the wrapper nor the raw call retries
+a 503 — which is right, because a re-POSTed MIME import would leave two
+drafts in the persona's Drafts. CKM-43's chunk PUTs do NOT need this and
+are not a second caller: they go to a pre-authenticated uploadUrl on
+another host with no bearer.

@@ -1,0 +1,63 @@
+---
+type: "issue"
+title: "Meeting transcript retrieval via Graph (no media, no bot)"
+created: "2026-08-01T03:54:51Z"
+resource: "oif:ckm/e3b7nr"
+aliases: ["CKM-30"]
+kind: "feature"
+priority: "medium"
+requested_by: "human:seanwy"
+tags: ["teams", "meetings", "graph"]
+depends_on: ["tr9bzy"]
+depends_on_aliases: ["CKM-29"]
+---
+
+seanwy's chosen focus out of the CKM-28 analysis: drop the real-time
+media requirement entirely, get meeting CONTENT through plain Graph
+REST and see how far that goes.
+
+Why this and not a meeting bot: live audio needs the .NET media
+library (no Python), a Windows Server VM in Azure with a public IP per
+instance, and the platform is still developer preview. Transcript
+retrieval is plain REST, httpx-friendly, and was de-metered on
+2025-08-25 (the old $0.0022/min transcript meter is gone).
+
+SHAPE (to be confirmed before building):
+- GET /me/onlineMeetings/{id}/transcripts and .../transcripts/{id}/content
+- change-notification subscriptions for transcript availability
+  (must subscribe BEFORE transcription starts)
+- models + a read-only tool on its own consent tier, mirroring how the
+  teams preset was done in CKM-25
+
+KNOWN CAVEATS: someone must actually start transcription in the
+meeting; transcripts arrive at/after meeting end (content, not live);
+scope naming suggests OnlineMeetingTranscript.Read.All, which is
+likely ADMIN-CONSENT-REQUIRED — that is the crux, see below.
+
+UNBLOCKED — CKM-29 answered the consent question (2026-08-01):
+- Scopes are delegated OnlineMeetings.Read + OnlineMeetingTranscript.
+  Read.All. The .Read.All IS admin-consent-required by definition; no
+  tenant setting ever opens it to user consent. So this needs one admin
+  consent per tenant — trivial in our own tenants, one click via the
+  ask in CKM-31 for client tenants.
+- BETTER THAN EXPECTED: the transcript API is no longer organizer-only.
+  The v1.0 doc states it is "also available to users who are part of
+  the meeting calendar invite", covering both private-chat and channel
+  meetings. So post-consent we can read transcripts of meetings seanwy
+  ORGANISED **and** ones he merely ATTENDED, regardless of who started
+  transcription. That is most of the value.
+- Two caveats to verify live: a Teams admin kill-switch ("Graph API
+  access to transcripts") can 403 everything even after consent; and
+  attendance via a forwarded link (not on the invite) probably does not
+  qualify (inference, unverified).
+- Guest identities: assume no until a live probe says otherwise.
+
+BUILD PATH: add the two scopes to our OWN tenant first (we are admin
+there — a new consent script mirroring add-teams-scopes.sh, merging
+rather than replacing), build the read-only tools on their own consent
+tier as with CKM-25, and live-verify on a real tenant against a meeting
+with transcription switched on before claiming anything.
+
+Verify live before believing anything — the CKM-25 Teams work 400'd on
+the first real call over an undocumented $top restriction that offline
+mocks happily accepted.

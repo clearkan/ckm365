@@ -1,0 +1,97 @@
+---
+type: "issue"
+title: "add_attachment — support files over 3 MB via upload sessions"
+created: "2026-08-26T05:20:00Z"
+resource: "oif:ckm/6rad5j"
+aliases: ["CKM-43"]
+kind: "feature"
+priority: "high"
+requested_by: "human:seanwy"
+tags: ["mail", "attachments", "write-tier", "graph-direct"]
+---
+
+seanwy (2026-08-26): add_attachment refuses anything over 3 MB
+(_MAX_DIRECT_ATTACHMENT in tools/mail/attachments.py:27, "upload sessions
+are not supported yet"). Hit live on a client engagement: two deliverables
+(a 3.5 MB .pptx and a 5.0 MB .html) had to reach the user's iPad by email
+before a flight, and the tool could not send either.
+
+The workaround chain was bad, and worth recording because each step looked
+reasonable and none of it should have been necessary:
+1. Zip — useless. The .pptx is already a compressed container (saved 33 KB
+   of 3.5 MB) and the .html carried 42 inline base64 PNGs, so 5.0 MB only
+   reached 3.4 MB. Both still over.
+2. PDF via LibreOffice — worse. The .html rendered to 705 A4 pages of
+   broken layout and was still 4.8 MB.
+3. Raw `split` into sub-3 MB parts, sent with cat/sha256 reassembly
+   instructions. Verified correct, and useless to the actual user: he was
+   on an iPad and had no shell to reassemble them with. That is the real
+   lesson — the workaround is not merely inconvenient, on a tablet or
+   phone it does not work at all.
+4. Finally docs/graph-direct.md Recipe 1 + a createUploadSession script,
+   which worked first time once the draft id was right. Both files landed
+   as ordinary attachments.
+
+Note the shape of the complaint that surfaced it: "in Outlook I can add up
+to 50 MB". The 3 MB ceiling reads to a user as a mail limit when it is
+ours — Outlook chunks transparently and never shows this wall. Whatever
+the fix, the error message should say whose limit it is.
+
+Sketch (write tier — no new consent; Mail.ReadWrite already covers
+/messages/{id}/attachments/createUploadSession):
+- Keep ONE public entry point. add_attachment(message_id, file_path)
+  should just work at any size up to Graph's ~150 MB session ceiling, and
+  pick the path internally: direct contentBytes under 3 MB, upload session
+  over. Callers should not have to know which mechanism ran — compare
+  CKM-32's "ONE code path" decision, which came out of the same instinct.
+- Chunk size must be a multiple of 320 KiB (Graph rejects otherwise); 4 MiB
+  worked well live. Stream from disk — never hold the file in memory, and
+  never base64 the large path.
+- The uploadUrl returned by createUploadSession is PRE-AUTHENTICATED. Do
+  not attach a bearer to the chunk PUTs. This means the chunk loop cannot
+  go through the Graph wrapper as-is, so it does not inherit the 429/5xx
+  retry policy — decide deliberately whether to give it its own retry and
+  resume (Graph returns nextExpectedRanges on an interrupted session) or
+  to fail loudly. Resume is the reason upload sessions exist; a 5 MB file
+  on hotel wifi will need it.
+- Honour CKM365_ATTACH_ROOT on the large path exactly as the small one
+  does. The containment check must not be bypassed by the new branch.
+- Refuse cleanly above Graph's session ceiling rather than starting an
+  upload that cannot finish.
+- Logging stays byte totals and truncated ids, per docs/graph-direct.md
+  rule 2 — never the filename of real mail.
+
+Tests worth having: a >3 MB round trip (attach, then download_attachment,
+assert bytes identical — CKM-32 already proved 11.9 MB downloads work, so
+the read side is not the constraint); a file exactly on the 3 MB boundary
+to pin which branch runs; root-confinement on the large path; and an
+interrupted-session resume if resume is implemented.
+
+Out of scope: attaching to calendar events, and any client-side
+compression or format conversion. Both were tried by hand here and both
+were the wrong answer.
+
+Incidental finding while working around this, NOT part of this issue:
+Graph message ids are returned base64url (`-`, `_`) by our tools, while
+web_link carries the standard-base64 form (`%2F`, `%3D`). Mixing the two
+produces `400 RequestBroker--ParseUri: Resource not found for the segment`,
+which does not obviously mean "your id is wrong". Worth a line in
+reference-notes.md if it bites anyone else. Separately, httpx normalises
+a percent-encoded `/` in a path segment back to a literal `/`, so
+encode_segment cannot protect an id containing one — irrelevant while ids
+stay base64url, but a trap if that ever changes.
+seanwy (2026-09-14): hit live a SECOND time, same shape. Two versions of
+one deck (5.3 MB and 6.5 MB) going to two external client organisations on
+a review thread; add_attachment refused both, and there is no
+split-and-reassemble workaround available when the recipients are external
+organisations rather than a colleague with a shell. Worked around again with the graph-direct recipe, ~35 lines, first
+try. The two findings from August held exactly:
+
+- 4 MiB chunks fine; uploadUrl pre-authenticated, so no bearer on the PUTs.
+- Both files landed as ordinary attachments, sizes verified with
+  verify_message (5267932 and 6507793 bytes, a few hundred bytes over the
+  on-disk size, which is the MIME framing).
+
+Two uses on two engagements three weeks apart, both blocking, both on
+deliverables that had to go to a client. Raising priority is not my call
+but the recurrence is the argument.

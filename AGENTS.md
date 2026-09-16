@@ -10,10 +10,15 @@ session; everything else worth knowing is one hop from here.
    are interactive, no secrets/bodies in logs). Non-negotiable.
 2. `tmp/m365-mcp-requirements.md` — the authoritative requirements. It is
    git-ignored; if missing, ask the owner (seanwy) before proceeding.
-3. `board/` — the ClearKan task board. Manage it with the `clearkan-lite`
-   skill (`.claude/skills/clearkan-lite/`). The issue file for whatever you
-   are asked to work on ("let's do CKM-18") contains the scope, the design
-   sketch, dependencies, and history — treat it as the brief.
+3. `board/` — the task board, in Open Issue Format (https://oif.md) since
+   CKM-50. The issue file for whatever you are asked to work on ("let's do
+   CKM-18") contains the scope, the design sketch and dependencies — treat
+   it as the brief; its history is the comment files under
+   `board/comments/<issue-id>/`. Find an issue by its old key with
+   `grep -rl 'CKM-18' board/issues` — the keys are kept in `aliases`.
+   The DIRECTORY is the status: `git mv` to move it, and never write
+   `id`/`status`/`state`/`column` into frontmatter. Validate with
+   `uvx --from oifmd oifmd validate board` (ephemeral, not a dependency).
 4. `README.md` + `docs/usage-modes.md` — capability tiers and how the two
    real deployments run. `docs/onboarding.md` for the new-user path.
    `docs/graph-direct.md` — the sanctioned way to call Graph directly for
@@ -22,7 +27,8 @@ session; everything else worth knowing is one hop from here.
 
 ## The working loop (what "done" means here)
 
-1. Move the board issue to `doing` (update `updated_at`, append `history`).
+1. Move the board issue to `doing` (`git mv` it — the directory IS the
+   status) and add a comment file under `board/comments/<issue-id>/`.
 2. Implement in the existing style: sync Python, plain typed tool functions
    (Ctx first arg), dataclass models owning their `$select`, docstrings that
    teach agents (they BECOME the MCP tool descriptions). Core deps are
@@ -48,7 +54,8 @@ session; everything else worth knowing is one hop from here.
    Discover real profile names with `uv run ckm365 doctor` or the
    list_accounts tool — they exist only in `~/.config/ckm365/profiles.toml`,
    never in this repo.
-5. Board issue → `done` with a history entry stating what was verified.
+5. Board issue → `done` (`git mv`) with a comment file stating what was
+   verified. `uvx --from oifmd oifmd validate board` must report 0 errors.
 6. Bump `VERSION` + `pyproject.toml` + `src/ckm365/__init__.py` (SemVer:
    new tools = minor) and add a `CHANGELOG.md` entry.
 7. Commit (imperative subject, body says what was verified), tag the

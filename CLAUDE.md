@@ -40,8 +40,19 @@ start; ask seanwy if missing).
 
 ## Task board
 
-`board/` is a ClearKan board — manage it with the `clearkan-lite` skill
-(`.claude/skills/clearkan-lite/`). Keep issue moves/history current.
+`board/` is an **Open Issue Format** board (https://oif.md) — migrated from
+clearkan-lite on 2026-09-16 (CKM-50). An issue is a Markdown file and its
+DIRECTORY is its status: move it with `git mv`, and never put `id`,
+`status`, `state` or `column` in frontmatter. History is one comment file
+per entry under `board/comments/<issue-id>/`; append, never edit.
+
+Old `CKM-NN` keys live on in each issue's `aliases`, so every reference in
+the code, docs, CHANGELOG and commit history still resolves — grep for the
+key to find an issue.
+
+Validate with `uvx --from oifmd oifmd validate board` (ephemeral, NOT a
+project dependency — core deps stay httpx/msal). It must report 0 errors
+before you commit board changes.
 
 ## Reference
 

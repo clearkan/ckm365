@@ -1,0 +1,35 @@
+---
+type: "issue"
+title: "Admin CLI — ckm365 user/mailbox subcommands for tenant setup, idiot-proof UX"
+created: "2026-07-29T23:40:54Z"
+resource: "oif:ckm/jzmfq7"
+aliases: ["CKM-13"]
+kind: "feature"
+priority: "medium"
+assignees: ["claude"]
+requested_by: "human:seanwy"
+tags: ["cli", "admin", "dx"]
+depends_on: ["e4v7sj"]
+depends_on_aliases: ["CKM-9"]
+---
+
+seanwy (2026-07-30): az-style CLI for permission/policy setup and user
+maintenance. CLI ONLY for now — deliberately NOT exposed as MCP tools.
+Idiot-proof: detailed --help per subcommand, error messages that say what
+to do next, dry-run by default for anything tenant-touching (print the
+exact az/Exchange-PowerShell commands; --run to execute after confirm) —
+this keeps the "propose commands, seanwy approves" working agreement.
+
+Sketch (grows from the existing scripts/):
+  ckm365 mailbox grant <shared-mailbox> --user <upn>   # Add-MailboxPermission
+  ckm365 mailbox revoke <shared-mailbox> --user <upn>
+  ckm365 mailbox create-test <suffix> / remove-test    # absorbs CKM-9 scripts
+  ckm365 app register [--name X]                       # absorbs create-app-registration.sh
+  ckm365 app consent-status                            # grants vs declared scopes
+  ckm365 user list / ckm365 profile list               # what is configured where
+  ckm365 doctor [profile]                              # login state, cache perms,
+                                                       # consent, smoke in one pass
+No hard-coded addresses anywhere — everything from args/profiles (audited
+2026-07-30: scripts already clean; profiles.example.toml genericized).
+Requires az CLI and/or ExchangeOnlineManagement pwsh present — detect and
+explain when missing, never half-run.
