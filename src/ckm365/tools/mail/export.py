@@ -45,6 +45,9 @@ def _yaml_value(value) -> str:
         return str(value)
     if isinstance(value, list):
         return "[" + ", ".join(_yaml_value(v) for v in value) + "]"
+    if isinstance(value, dict):  # flow style keeps one key per line
+        return "{" + ", ".join(f"{k}: {_yaml_value(v)}"
+                               for k, v in value.items()) + "}"
     text = "".join(c for c in str(value) if ord(c) >= 32 and ord(c) != 127)
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -110,23 +113,49 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
             version: str, sent_folder: str | None = None) -> str:
     """Render the greppable record: front matter, body, attachment manifest.
 
-    The front matter is Open Knowledge Format v0.1 (openknowledgeformat.com):
+    The front matter is Open Knowledge Format v0.2 (openknowledgeformat.com):
     OKF is markdown + YAML front matter with a required `type` and
-    recommended title/description/resource/tags/timestamp, and it allows
-    extension keys — so the mail-specific fields ride along underneath and
-    the file drops into an `okf/` repo unmodified. Where OKF has a name for
-    something we would have invented one for (title, timestamp, resource),
-    OKF's name wins; nothing is written twice.
+    recommended title/description/resource/tags, and it allows extension
+    keys — so the mail-specific fields ride along underneath and the file
+    drops into an `okf/` repo unmodified. Where OKF has a name for something
+    we would have invented one for, OKF's name wins; nothing is written
+    twice.
+
+    WHAT v0.2 CHANGED FOR US, and what it deliberately did not:
+
+    - `timestamp` is gone, replaced by `generated: {by, at}` (v0.2's one
+      breaking change that touches this document). `by` follows OKF's actor
+      convention, `<producer>/<version>`, which absorbs what used to be the
+      `exported_by` extension key — so the upgrade removes a field rather
+      than adding one.
+    - `at` is the MESSAGE's own time, NOT the moment of export. OKF defines
+      it as when the content last meaningfully changed, and this record is a
+      pure projection of one immutable message: it cannot change after the
+      message arrived. Using export time would be both less true and would
+      break the determinism the .md format promises.
+    - `sources` is NOT emitted. v0.2 moves citations there, but we never had
+      any: the concept IS the email rather than something derived from other
+      material, and `resource` already points at it. A `sources` entry would
+      restate `resource` and nothing more.
+    - `verified` is NOT emitted, which is the honest signal. Its absence
+      puts the record in v0.2's "unverified" trust tier, which is exactly
+      what a machine export with no human confirmation is.
+    - `status`/`stale_after` are NOT emitted: `status` defaults to `stable`,
+      and archived mail does not go stale.
+    - `okf_version` is NOT emitted. v0.2 declares it in a bundle-root
+      index.md, and we write single documents INTO someone else's bundle —
+      stamping a version on a leaf file would be claiming authority over a
+      bundle we do not own.
     """
     headers = message.headers
     front = {
-        # OKF v0.1 core
+        # OKF v0.2 core
         "type": "Email",
         "title": message.subject or "(no subject)",
         "description": _yaml_description(message),
         "resource": message.web_link,
         "tags": _tags(message, mailbox, sent_folder),
-        "timestamp": message.received,
+        "generated": {"by": f"ckm365/{version}", "at": message.received},
         # extension keys: the mail specifics OKF has no opinion about
         "from": _who([message.sender]) if message.sender else "",
         "to": _who(message.to),
@@ -137,7 +166,6 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
         "has_attachments": message.has_attachments,
         "is_bulk": bool(headers and headers.is_bulk),
         "is_auto_reply": bool(headers and headers.is_auto_reply),
-        "exported_by": f"ckm365 {version}",
     }
     lines = ["---"]
     lines += [f"{k}: {_yaml_value(v)}" for k, v in front.items()]
@@ -162,11 +190,12 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
     THE FORMAT COMES FROM THE EXTENSION you give dest_path:
 
     - `.md` / `.markdown` / `.txt` — a GREPPABLE record, and the one to
-      reach for by default. It is an Open Knowledge Format v0.1 document
+      reach for by default. It is an Open Knowledge Format v0.2 document
       (openknowledgeformat.com): YAML front matter carrying OKF's
-      type/title/description/resource/tags/timestamp plus mail-specific
-      extension keys (from, to, cc, mailbox, message ids, bulk and
-      auto-reply flags), then the body as PLAIN TEXT, then a manifest of
+      type/title/description/resource/tags plus `generated` (who produced
+      the record and the message's own time), then mail-specific extension
+      keys (from, to, cc, mailbox, message ids, bulk and auto-reply
+      flags), then the body as PLAIN TEXT, then a manifest of
       the attachments with their attachment_ids. So it drops into an
       `okf/` repo unmodified — `tags` carries the facets worth filtering
       on (email, inbound/outbound, attachments, bulk, auto-reply).

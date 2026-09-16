@@ -96,7 +96,10 @@ def test_markdown_record_is_greppable_and_complete(tmp_path):
             'resource: "https://outlook.office365.com/mail/deeplink/m1"',
             # facets an okf/ repo can filter on, all derived
             'tags: ["email", "inbound", "attachments", "bulk"]',
-            'timestamp: "2026-08-10T09:15:00Z"',
+            # OKF v0.2 provenance: the actor convention <producer>/<version>,
+            # and `at` is the MESSAGE's time, not the export's — that is what
+            # keeps the record deterministic (see the next test)
+            'generated: {by: "ckm365/2.8.0", at: "2026-08-10T09:15:00Z"}',
             # extension keys: the mail specifics OKF has no opinion about
             'from: "Alex Doe <other-user@tenant-b.example>"',
             f'to: "Ops <{MAILBOX}>"',
@@ -111,6 +114,22 @@ def test_markdown_record_is_greppable_and_complete(tmp_path):
     # no local HTML stripping (and no new dependency) is needed
     assert prefer == ['outlook.body-content-type="text"']
     assert "$value" not in " ".join(seen)     # md never touches raw MIME
+
+
+def test_okf_v02_optional_families_are_deliberately_absent(tmp_path):
+    """v0.2 adds sources/verified/status/stale_after/okf_version. Emitting
+    any of them here would be a claim we cannot support: `sources` would
+    restate `resource` (the concept IS the email), absent `verified` is
+    what puts a machine export in the honest "unverified" trust tier,
+    `status` defaults to stable and archived mail does not go stale, and
+    `okf_version` belongs to a bundle root we do not own."""
+    ctx, _, _p = _ctx()
+    dest = tmp_path / "record.md"
+    mail.export_message(ctx, "m1", str(dest))
+    front = dest.read_text().split("---")[1]
+    for absent in ("sources:", "verified:", "status:", "stale_after:",
+                   "okf_version:", "timestamp:", "exported_by:"):
+        assert absent not in front, absent
 
 
 def test_record_is_deterministic_so_git_sees_no_diff(tmp_path):

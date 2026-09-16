@@ -3,6 +3,44 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.8.0] — 2026-09-16
+
+### Changed
+- **`export_message`'s record is now Open Knowledge Format v0.2** (was
+  v0.1). The one v0.2 breaking change that touches this document is
+  `timestamp` → `generated: {by, at}`; `by` follows v0.2's actor convention
+  (`ckm365/<version>`), which absorbs the old `exported_by` extension key,
+  so the upgrade REMOVES a field rather than adding one.
+  `generated.at` is the MESSAGE's own time, not the moment of export. OKF
+  defines it as when the content last meaningfully changed, and the record
+  is a pure projection of one immutable message — it cannot change after
+  the message arrived. Export time would be both less true and would break
+  the determinism the `.md` format promises.
+  **This changes existing records**: a re-export produces a diff on the
+  `timestamp`/`exported_by` lines once. Consumers reading `timestamp`
+  should read `generated.at`; v0.2 permits falling back to `timestamp` on
+  older documents, so both generations stay readable.
+
+### Deliberately not added
+v0.2's other new families are omitted, and the omissions are pinned by a
+test so a later "completeness" edit has to argue with it:
+- `sources` — v0.2 moves citations there, but we never had any. The concept
+  IS the email rather than something derived from other material, and
+  `resource` already points at it; an entry would restate it and nothing more.
+- `verified` — its ABSENCE is the honest signal, putting the record in
+  v0.2's "unverified" trust tier, which is what a machine export with no
+  human confirmation is.
+- `status` / `stale_after` — `status` defaults to `stable`, and archived
+  mail does not go stale.
+- `okf_version` — v0.2 declares it in a bundle-root `index.md`. We write
+  single documents INTO someone else's bundle, so stamping a version on a
+  leaf file would claim authority over a bundle we do not own.
+
+Verified live on a real mailbox: the front matter parses, carries a
+non-empty `type` (v0.2 conformance), `generated.at` equals the message's
+received time, every omitted family is genuinely absent, and a re-export is
+byte-identical. Offline 170 passed, 15 skipped.
+
 ## [2.7.0] — 2026-09-16
 
 Fixes the compose loop, which had never once worked against real Graph, and
