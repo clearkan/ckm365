@@ -4,9 +4,9 @@ title: "Shared-instance mode: duplicate serve processes cost ~1.4 GB PSS"
 created: "2026-09-16T02:10:00Z"
 resource: "oif:ckm/dqgcdk"
 kind: "improvement"
-priority: "low"
+priority: "medium"
 requested_by: "claude"
-tags: ["serve", "mcp", "memory", "architecture", "needs-signoff"]
+tags: ["serve", "mcp", "memory", "security", "architecture", "needs-signoff"]
 ---
 
 Reported by another agent session and independently reproduced here with
@@ -77,6 +77,48 @@ process by construction — stdin/stdout is a pipe pair to a single parent.
    instance — is the right shape and fits the existing tier discipline,
    because a read-only daemon would hold a genuinely weaker token rather
    than merely a policy flag.
+
+## The security case is stronger than the memory case (verified)
+
+Raised by the reporter after the first round and checked here against the
+code rather than taken on trust. It reframes the issue, which is why the
+priority moved low -> medium.
+
+All 18 invocations on this host are byte-identical —
+`ckm365 serve --preset mail,calendar --write --enable-send`, no `--account`.
+Confirmed by reading every `/proc/*/cmdline`.
+
+And they really do hold SEND-scoped delegated tokens. `Auth.__init__`
+requests `DELEGATED_SEND` (= RW + `Mail.Send` + `Mail.Send.Shared`) when
+send mode is on AND the profile allows it — and **`allow_send` defaults to
+`True`** (config.py:34), so the per-profile cap is OPT-OUT, not opt-in.
+Neither device_code profile sets it, so both get send scopes. Checked by
+constructing `Auth(p, read_only=False, send=True)` for each profile and
+printing the resulting scope list.
+
+So the standing privilege today is: N long-lived processes, each able to
+request a token that can SEND mail as the owner, held for as long as the
+session lives. A shared read-only daemon plus opt-in write would move most
+of them from SEND scope to `Mail.Read`/`Calendars.Read`. That is a
+reduction in standing privilege, and it would be worth doing at EQUAL
+memory cost. Lead with this, not the 1.4 GB.
+
+SEPARATE AND CHEAPER, available today without building anything: setting
+`allow_send = false` on any profile that does not need to send immediately
+downscopes every session using it, because the cap is checked both when
+scopes are chosen and again in `Ctx.require_send`. That is a config change
+on the owner's box, not a repo change, and it is his call — noted here
+because it is the fastest risk reduction available and needs no daemon.
+
+## Per-profile keying is required TODAY, not future-proofing
+
+The reporter assumed a shared daemon "would only ever instantiate one"
+profile since nothing passes `--account`. Not so: THERE IS NO DEFAULT
+PROFILE. `resolve_profile(profiles, None)` raises `ConfigError` unless
+exactly one profile is configured (config.py:149), and three are. So every
+tool call already names its account explicitly, and up to three profiles
+are reachable from any one process. Whatever gets built must be keyed by
+profile from the first commit.
 
 ## Shape if it is ever approved
 
