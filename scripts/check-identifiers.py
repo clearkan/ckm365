@@ -36,7 +36,8 @@ DOMAIN_OK = {
     "openknowledgeformat.com", "openknowledge.ai", "python.org", "pypi.org",
     "astral.sh", "schema.org", "json-schema.org", "atlassian.net",
     "developer.microsoft.com", "onmicrosoft.com", "botframework.com",
-    "files.pythonhosted.org", "pythonhosted.org",
+    "files.pythonhosted.org", "pythonhosted.org", "teams.microsoft.com",
+    "teams.live.com",
     # The documented placeholders only. NOT *.onmicrosoft.com in general —
     # a real tenant leak looks exactly like a subdomain of it, so allowing
     # the parent would blind the check to the likeliest mistake.

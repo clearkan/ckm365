@@ -34,3 +34,6 @@ build/
 
 # Subagent worktrees (never tracked)
 .claude/worktrees/
+
+# teams-transcript skill output — other people's words, never in this public repo
+meetings/
