@@ -7,7 +7,7 @@ import logging
 import sys
 from pathlib import Path
 
-from . import __version__, admin
+from . import __version__, admin, audit
 from .auth import Auth, AuthError, NeedsLogin
 from .config import ConfigError, load_profiles, resolve_profile
 from .graph import GraphError
@@ -63,6 +63,7 @@ def main(argv: list[str] | None = None) -> None:
                            help="also consent to the Mail.Send scopes")
 
     admin.add_parsers(sub)  # mailbox / app / doctor (CKM-13)
+    audit.add_parser(sub)   # read-only access audit (CKM-54)
 
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr,
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> None:
             return
         if args.command == "watch":
             raise SystemExit(_watch(args))
+        if args.command == "audit":
+            raise SystemExit(audit.run(args))
         if args.command in admin.COMMANDS:
             raise SystemExit(admin.run(args))
         profile = resolve_profile(load_profiles(args.profiles), args.profile)

@@ -161,6 +161,7 @@ mkdir -p -m 700 ~/.config/ckm365                          # holds profiles + cer
 cp profiles.example.toml ~/.config/ckm365/profiles.toml   # then edit
 uv run ckm365 login <profile>                             # device-code flow
 uv run ckm365 doctor                                      # config/login/consent
+uv run ckm365 audit [--exchange] [--md]                   # who can reach mail; why it fails (docs/access-audit.md)
 uv run python scripts/live-smoke.py <profile>             # verify the READ path
 uv run python scripts/draft-cycle-smoke.py <profile>      # verify the WRITE path
 ```

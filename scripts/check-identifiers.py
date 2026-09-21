@@ -94,7 +94,12 @@ def main() -> int:
             msg = run(["git", "log", "-1", "--format=%B", sha])
             found += hits(msg, f"commit {sha[:8]} MESSAGE")
     if args.staged:
-        found += hits(run(["git", "diff", "--cached"]), "staged diff")
+        # Added lines only, with the "+" marker stripped: it would otherwise
+        # read as the local part of an address before a decorator.
+        diff = run(["git", "diff", "--cached"]).splitlines()
+        added = [ln[1:] for ln in diff
+                 if ln.startswith("+") and not ln.startswith("+++")]
+        found += hits("\n".join(added), "staged diff")
     else:
         for path in run(["git", "ls-files"]).splitlines():
             if (path.startswith("tests/")        # fixtures are deliberate

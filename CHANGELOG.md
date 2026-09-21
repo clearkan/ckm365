@@ -3,6 +3,25 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [Unreleased]
+
+### Added
+- **`ckm365 audit`** (CKM-54): a read-only audit of mailbox access that
+  runs at whatever scope this machine's credentials allow. It covers three
+  sources:
+  - the profile's own token: live probes, and the "why isn't it working" findings
+  - Entra/Azure via `az`: roles, owned apps, consents and Azure RBAC. With
+    an org role it becomes a tenant sweep: role holders, PIM availability,
+    every app with Graph or Exchange application permissions, and
+    tenant-wide consents. `--user` audits named accounts.
+  - Exchange Online via `pwsh`, opt-in with `--exchange` (device-code
+    sign-in): FullAccess, SendAs and folder delegation on the mailbox, plus
+    admin role groups, app role assignments and a tenant FullAccess sweep.
+
+  Sections it can't run print their enable steps. Output is text or
+  `--md`, and the exit code is 1 on any RISK finding. See
+  `docs/access-audit.md`.
+
 ## [2.8.0] — 2026-09-16
 
 ### Changed

@@ -129,6 +129,10 @@ class Auth:
             os.close(fd)
         tmp.replace(self._cache_path)
 
+    def has_cache(self) -> bool:
+        """Whether a token cache file exists (no MSAL, no network)."""
+        return self._cache_path.exists()
+
     def token(self) -> str:
         with self._lock():
             self._reload()
