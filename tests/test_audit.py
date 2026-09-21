@@ -37,8 +37,10 @@ def test_no_tools_no_login_skips_with_enable_steps(profiles_file, tmp_path,
                                                    monkeypatch, capsys):
     monkeypatch.setattr(audit.shutil, "which", lambda _: None)
     monkeypatch.setattr("ckm365.auth.state_dir", lambda: tmp_path)
-    assert cli("--profiles", str(profiles_file), "audit") == 0
-    out = capsys.readouterr().out
+    assert cli("--profiles", str(profiles_file), "audit", "-v") == 0
+    captured = capsys.readouterr()
+    out = captured.out
+    assert "audit: section: Exchange Online (pwsh)" in captured.err
     assert "FAIL  no valid cached login" in out
     assert "to enable/widen: uv run ckm365 login tenant-a" in out
     assert "SKIP  az CLI not installed" in out

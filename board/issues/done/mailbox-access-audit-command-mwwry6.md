@@ -29,10 +29,10 @@ offline tests (tests/test_audit.py).
 
 - [x] ckm365 section: live-verified (it caught a bad /me probe, now removed)
 - [x] Entra section at tenant scope, with --user: live-verified
-- [ ] Exchange section via --exchange: live run with a sign-in. The
-      expired-code failure path is verified. The same cmdlets passed in the
-      manual review run.
+- [x] Exchange section via --exchange: live-verified at tenant scope
+      (2026-09-22). The expired-code failure path is verified too.
+- [x] --verbose step logging (the FullAccess sweep is one call per mailbox)
 - [x] Fable 5 pre-commit review: false-clean on failed reads, the 20-member
       $expand cap, and Markdown nesting all fixed. The switch to
       roleAssignments surfaced a role that the legacy directoryRoles view had missed.
-- [ ] user-scope run by a non-admin account
+- [ ] user-scope run by a non-admin account (carried into CKM-55)

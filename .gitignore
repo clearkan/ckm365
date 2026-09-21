@@ -37,3 +37,6 @@ build/
 
 # teams-transcript skill output — other people's words, never in this public repo
 meetings/
+
+# ckm365 audit --md output names real accounts — keep it out of this public repo
+/audit*.md

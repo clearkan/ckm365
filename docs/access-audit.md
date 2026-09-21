@@ -15,6 +15,14 @@ uv run ckm365 audit [profile] --user someone@tenant-a.example   # audit an accou
 uv run ckm365 audit [profile] --exchange --mailbox shared@tenant-a.example
 ```
 
+`-v`/`--verbose` logs each step to stderr, including every az call and
+each Exchange query. The Exchange FullAccess sweep makes one call per
+mailbox, so it can take minutes on a large tenant. Verbose output shows
+it's still working.
+
+**Audit output names real accounts.** Write `--md` files outside any public
+repo; in this repo, `/audit*.md` is git-ignored and `tmp/` is the place.
+
 Exit code 1 means at least one **RISK** finding. The levels are:
 
 | Level | Meaning |

@@ -30,6 +30,7 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +58,15 @@ MAIL_DELEGATED = ("Mail.", "MailboxSettings.", "Calendars.", "EWS.", "IMAP.",
                   "POP.", "SMTP.", "full_access")
 
 
+_verbose = False
+
+
+def _step(msg: str) -> None:
+    """--verbose progress, to stderr so --md on stdout stays clean."""
+    if _verbose:
+        print(f"audit: {msg}", file=sys.stderr, flush=True)
+
+
 @dataclass
 class Section:
     title: str
@@ -69,8 +79,14 @@ class Section:
 
 
 def run(args: argparse.Namespace) -> int:
+    global _verbose
+    _verbose = args.verbose
     logging.getLogger("httpx").setLevel(logging.WARNING)  # probes, not a log
-    sections = [_ckm365(args), _entra(args), _exchange(args)]
+    sections = []
+    for name, section in (("ckm365 profile", _ckm365), ("Entra/Azure (az)", _entra),
+                          ("Exchange Online (pwsh)", _exchange)):
+        _step(f"section: {name}")
+        sections.append(section(args))
     out = render_md(sections) if args.md else render_text(sections)
     if args.md and args.md != "-":
         Path(args.md).write_text(out)
@@ -93,6 +109,9 @@ def add_parser(sub) -> None:
                    help="also audit this account's roles/apps/RBAC (repeatable)")
     p.add_argument("--mailbox", metavar="ADDR",
                    help="mailbox whose delegations to check (default: yours)")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="log each step to stderr (the Exchange sweep is slow "
+                        "on big tenants: one call per mailbox)")
     p.add_argument("--exchange", action="store_true",
                    help="run the Exchange Online section (device-code sign-in)")
 
@@ -206,6 +225,7 @@ def _probe(s: Section, graph: Graph, label: str, path: str, params: dict) -> Non
 
 def _az(*argv: str) -> tuple[int, object]:
     """Run a READ-ONLY az command with JSON output; (rc, parsed or stderr)."""
+    _step("az " + " ".join(a.split("?")[0] for a in argv[:3]))
     proc = subprocess.run(["az", *argv, "-o", "json"], capture_output=True,
                           text=True, check=False)
     if proc.returncode:
@@ -411,12 +431,13 @@ def _app_permission_holders(s: Section, resource_app: str) -> None:
 # --- section 3: Exchange Online via pwsh --------------------------------------
 
 _EXO_PS = r"""
-param($Out, $Mailbox)
+param($Out, $Mailbox, [switch]$Progress)
 $ErrorActionPreference = 'Stop'
 Import-Module ExchangeOnlineManagement
 Connect-ExchangeOnline -Device -ShowBanner:$false
 $res = [ordered]@{ isOrg = $false; errors = @() }
 function Try-Get($name, [scriptblock]$sb) {
+  if ($Progress) { [Console]::Error.WriteLine("audit: exchange $name") }
   try { $res[$name] = @(& $sb) } catch { $res.errors += "${name}: $($_.Exception.Message)" }
 }
 if (-not $Mailbox) { $Mailbox = (Get-ConnectionInformation)[0].UserPrincipalName }
@@ -462,7 +483,8 @@ def _exchange(args: argparse.Namespace) -> Section:
         script.write_text(_EXO_PS)
         # stdout/stderr pass through so the device-code prompt reaches the user.
         proc = subprocess.run(["pwsh", "-NoProfile", "-File", str(script),
-                               "-Out", str(out), "-Mailbox", args.mailbox or ""],
+                               "-Out", str(out), "-Mailbox", args.mailbox or "",
+                               *(["-Progress"] if args.verbose else [])],
                               check=False)
         if proc.returncode or not out.exists():
             s.add("FAIL", "Exchange sign-in or query failed (see pwsh output above)")
