@@ -1,4 +1,4 @@
-# Next session — ckm365-93 — 2026-10-26 (updated 23:00 Melbourne)
+# Next session — ckm365-93 — 2026-10-26 (updated after v2.10.1)
 
 You are resuming ckm365, the multi-tenant Microsoft Graph MCP server, on the
 correspondence-in-a-repo work. Read this first, then `AGENTS.md` (it chains
@@ -9,12 +9,12 @@ This file is committed to the PUBLIC repo on purpose, so it can travel with
 the clone. It therefore names no profiles, tenants, hosts or clients. Real
 profile names come from `uv run ckm365 doctor` on the machine you are on.
 
-## State — verified at the v2.10.0 release
+## State — verified at the v2.10.1 release
 
 - Repo: `main` at the commit carrying this file, pushed. Nothing
   uncommitted, nothing unpushed, no stashes, one worktree.
-- Released: **v2.10.0**, tagged and pushed.
-- Offline suite: 226 passed, 15 skipped. Live suite: 14/14 on both
+- Released: **v2.10.1**, tagged and pushed.
+- Offline suite: 229 passed, 15 skipped. Live suite: 14/14 on both
   delegated tenant profiles. live-smoke OK on both.
 
 ## New machine: what does NOT travel with git
@@ -37,6 +37,12 @@ profile names come from `uv run ckm365 doctor` on the machine you are on.
   and `migrate_correspondence` in `src/ckm365/tools/mail/migrate.py`, read
   tier. The planner was run read-only over four real folders; the apply
   step was dry-run over two. NOT applied for real anywhere yet.
+- **v2.10.1, a data-loss fix** (6v3d56, done): `upgrade` re-exported from
+  Graph and replaced the whole file, deleting what a person had written
+  below the mail. A second Claude session found it testing 2.10.0 on a
+  real folder in a throwaway worktree (6 of 18 records affected, nothing
+  lost for real). `upgrade` is now front-matter-only, no Graph call. The
+  spec on cxsznh asked for the re-export, so the error was in the brief.
 - **Codex as co-pilot is live** for this repo: three cards merged
   (h59xfz, dr4f2n, cxsznh). Claude wrote test-first specs on main and the
   cards; Codex implemented in a sandboxed worktree. Costs 3-10 model
@@ -78,7 +84,9 @@ handing implementation to Codex.
 
 - **Apply the migration for real** on a project folder: pick one, run
   `migrate_correspondence` with `dry_run=false` on a clean git tree, review
-  the diff. Not done because it rewrites files in private repos.
+  the diff. The session that found 6v3d56 has a throwaway worktree for
+  this; it was asked to re-run on v2.10.1 and confirm the six annotated
+  records keep their sections. Its report lands as a comment on 6v3d56.
 - **History rewrite.** Pushed history holds identifiers: the earlier
   list (a dev box name, a vendor name, both profile names in commit
   31d5b22's issue file, the dqgcdk issue and a comment), plus this
@@ -91,6 +99,15 @@ handing implementation to Codex.
 
 ## Gotchas (new ones first)
 
+- A record's body is a person's document once exported. No migration step
+  may regenerate it; `upgrade` and `backfill-id` edit lines BEFORE the
+  closing fence only (`_front_matter_lines` in migrate.py). The planner
+  cannot tell an annotated record from a clean one, so any future
+  "re-export" action must diff bodies first and fall back to manual.
+- An offline test proving a rewrite "keeps the body" must build the
+  fixture WITH extra content below the body. The 2.10.0 fixtures had
+  bodies the re-export reproduced, so the suite was green on a bug the
+  first real folder showed.
 - Codex report comments land on the board verbatim and can quote absolute
   paths. `check-identifiers.py` BEFORE the commit that carries them, in a
   chain that cannot proceed on failure (this session pushed one with `;`).
@@ -109,7 +126,8 @@ handing implementation to Codex.
 
 ## Key references
 
-- Brief: `board/issues/done/correspondence-migration-helper-mr31re.md`
+- Brief: `board/issues/done/correspondence-migration-helper-mr31re.md`;
+  the bug and its fix: `board/issues/done/migrate-upgrade-deletes-hand-written-sections-6v3d56.md`
 - Code: `src/ckm365/tools/mail/migrate.py`, `export.py` (`record_bytes`)
 - Tests: `tests/test_mail_migrate.py`, `tests/test_mail_migrate_apply.py`
 - Codex loop: AGENTS.md "Codex as co-pilot"; `../omni/skills/copilot/`

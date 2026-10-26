@@ -3,6 +3,23 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.10.1] — 2026-10-26
+
+### Fixed
+- **`migrate_correspondence`'s `upgrade` deleted hand-written sections**
+  (6v3d56, high). It re-exported the message from Graph and replaced the
+  whole file, so anything a person had written below the mail body went
+  with it. Found by a dry test against a real folder on a throwaway
+  branch: 6 of 18 old records carried summaries and action tables.
+  `upgrade` is now a front-matter-only rewrite like `backfill-id`:
+  `timestamp: X` becomes `generated: {by: "ckm365/<version>", at: X}`,
+  `exported_by` is dropped, and every byte after the closing fence is
+  kept. No Graph call. On the folder that found the bug the change is
+  exactly two lines out and one in per record, body identical for all 18.
+  The dry-run detail now says "body kept". The `pair` lookup no longer
+  tries a record's own mailbox first (only `upgrade` had one, and it no
+  longer looks anything up); it uses the selected mailbox.
+
 ## [2.10.0] — 2026-10-26
 
 ### Added

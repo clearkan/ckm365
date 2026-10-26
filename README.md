@@ -252,5 +252,6 @@ covering the send tier end to end; v2.6.0 closes the compose loop
 `verify_message`, and per-profile HTML signatures) — offline-verified;
 its live draft-cycle run is still outstanding; v2.9.0 adds `ckm365 audit`
 and Message-ID dedupe on `export_message`; v2.10.0 adds the
-correspondence migration planner and apply step. Security + simplification
+correspondence migration planner and apply step; v2.10.1 makes its
+`upgrade` front-matter-only, so hand-written sections survive. Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).

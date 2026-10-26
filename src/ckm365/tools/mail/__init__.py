@@ -10,7 +10,7 @@ detail — import from this package, never from its submodules.
     read.py         listings, one message, curated headers, folders, counts
     attachments.py  list metadata, stream bytes out, put a file in, take one off
     export.py       one message to a file (OKF .md record, or raw .eml)
-    migrate.py      read-only plans for old correspondence folders
+    migrate.py      plan and apply old-folder migrations; never rewrites a body
     drafts.py       reply/forward/update/revise/create/discard, and the one send
     verify.py       what a composed message actually says, before it goes
     triage.py       read state, flags, filing — batched metadata writes

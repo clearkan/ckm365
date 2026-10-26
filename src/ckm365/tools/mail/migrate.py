@@ -5,6 +5,7 @@ import logging
 from collections import Counter
 from pathlib import Path
 
+from ... import __version__
 from ...graph import GraphError, mailbox_path
 from ..context import Ctx
 from .disk import confine, write_atomic, write_target
@@ -61,7 +62,8 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
 
     Each item proposes an action:
     - none: keep this current record, identified sidecar, or paired .eml.
-    - upgrade: convert an OKF v0.1 record to v0.2.
+    - upgrade: rewrite an OKF v0.1 record's front matter to v0.2; the
+      body, and anything a person wrote below it, is kept.
     - backfill-id: copy the Message-ID from the same-stem .eml into a
       hand-written record; the plan reports the proposed id and pair.
     - pair: create a record for a raw .eml that has no matching record.
@@ -166,18 +168,47 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
             "skipped": dict(skipped), "subfolders": subfolders}
 
 
-def _backfill_bytes(path: Path, internet_message_id: str) -> bytes:
-    """Insert one key into raw front matter, preserving every existing byte."""
+def _front_matter_lines(path: Path) -> tuple[list[bytes], int, bytes]:
+    """The file's lines, the index of the closing fence, and its newline.
+    Every rewrite below edits lines before the fence and keeps the rest."""
     lines = path.read_bytes().splitlines(keepends=True)
     if lines and lines[0].strip() == b"---":
         for i in range(1, min(len(lines), _MAX_FRONT_MATTER + 1)):
             if lines[i].strip() == b"---":
                 newline = b"\r\n" if lines[0].endswith(b"\r\n") else b"\n"
-                field = "internet_message_id: " + json.dumps(
-                    internet_message_id, ensure_ascii=False)
-                lines.insert(i, field.encode("utf-8") + newline)
-                return b"".join(lines)
-    raise ValueError("No closed front matter for backfill-id")
+                return lines, i, newline
+    raise ValueError("No closed front matter to rewrite")
+
+
+def _backfill_bytes(path: Path, internet_message_id: str) -> bytes:
+    """Insert one key into raw front matter, preserving every existing byte."""
+    lines, fence, newline = _front_matter_lines(path)
+    field = "internet_message_id: " + json.dumps(
+        internet_message_id, ensure_ascii=False)
+    lines.insert(fence, field.encode("utf-8") + newline)
+    return b"".join(lines)
+
+
+def _upgrade_bytes(path: Path) -> bytes:
+    """OKF v0.1 to v0.2 in the front matter ONLY: `timestamp: X` becomes
+    `generated: {by: "ckm365/<version>", at: X}` and `exported_by` goes
+    (CHANGELOG 2.8.0 is exactly that delta). Nothing after the closing
+    fence is touched: a person may have written below the mail (6v3d56),
+    and re-exporting from Graph would have thrown that away."""
+    lines, fence, newline = _front_matter_lines(path)
+    head, stamped = [], False
+    for line in lines[:fence]:
+        key, _, value = line.partition(b":")
+        if key.strip() == b"timestamp":
+            head.append(b"generated: {by: "
+                        + json.dumps(f"ckm365/{__version__}").encode()
+                        + b", at: " + value.strip() + b"}" + newline)
+            stamped = True
+        elif key.strip() != b"exported_by":
+            head.append(line)
+    if not stamped:
+        raise ValueError("No timestamp in the front matter to upgrade")
+    return b"".join(head + lines[fence:])
 
 
 def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = None,
@@ -191,17 +222,19 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
     actions defaults to upgrade, pair and backfill-id; pass a subset to
     limit this pass. No mail in Graph is ever changed.
 
-    upgrade re-exports our old OKF v0.1 record in place. pair writes a .md
-    record beside a lone .eml and refuses an existing destination file.
-    backfill-id inserts the paired .eml's Message-ID into a hand-written
-    record's front matter, without Graph. Hand-written bodies are NEVER
-    rewritten, nothing is deleted, and writes are atomic.
+    upgrade rewrites only the front matter of our old OKF v0.1 record, in
+    place and without Graph; the body, including anything a person added
+    below the mail, is kept byte for byte. pair writes a .md record beside
+    a lone .eml and refuses an existing destination file. backfill-id
+    inserts the paired .eml's Message-ID into a hand-written record's
+    front matter, without Graph. No body is EVER rewritten, nothing is
+    deleted, and writes are atomic.
 
     Outcomes: would-apply describes a dry-run write; applied means written;
     skipped carries the planner's reason for manual/duplicate items, or
     says the action was not requested. Current items (none) are omitted.
-    not-found means no Message-ID hit in the record's mailbox or the
-    selected mailbox. A message delivered minutes ago may not be indexed
+    not-found means no Message-ID hit for a lone .eml in the selected
+    mailbox. A message delivered minutes ago may not be indexed
     yet: a missing hit must not be assumed to mean the message is gone.
     failed carries a per-file error; other items still proceed.
 
@@ -231,36 +264,29 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
         try:
             path = confine(folder / item["name"], "source")
             imid = item["internet_message_id"]
-            if not imid:
-                raise ValueError("No Message-ID available for migration")
-            if action == "backfill-id":
+            if action == "upgrade":
+                data = _upgrade_bytes(path)
+                detail = (f"Rewrite {path.name} front matter (timestamp to "
+                          "generated, exported_by dropped); body kept")
+                dest = path
+            elif action == "backfill-id":
                 data = _backfill_bytes(path, imid)
                 detail = f"Insert internet_message_id into {path.name} front matter"
                 dest = path
             else:
-                g, target_mailbox = ctx.target(account, mailbox)
-                own = (_front_matter(path) or {}).get("mailbox") \
-                    if item["kind"] == "record" else None
-                candidates = list(dict.fromkeys(
-                    mb for mb in (own, target_mailbox) if mb))
+                g, mb = ctx.target(account, mailbox)
                 escaped = imid.replace("'", "''")
-                found = None
-                for mb in candidates:
-                    hits = g.get(mailbox_path(mb, "messages"), params={
-                        "$filter": f"internetMessageId eq '{escaped}'",
-                        "$select": "id", "$top": 2}).get("value", [])
-                    if hits:
-                        found = (mb, hits[0]["id"])
-                        break
-                if found is None:
+                hits = g.get(mailbox_path(mb, "messages"), params={
+                    "$filter": f"internetMessageId eq '{escaped}'",
+                    "$select": "id", "$top": 2}).get("value", [])
+                if not hits:
                     result.update(outcome="not-found", detail=(
-                        f"Message-ID not found in mailboxes: {', '.join(candidates)}. "
-                        "A message delivered minutes ago may not be indexed yet; "
-                        "do not assume it is gone."))
+                        f"Message-ID not found in mailbox {mb}. A message "
+                        "delivered minutes ago may not be indexed yet; do not "
+                        "assume it is gone."))
                     continue
-                mb, message_id = found
-                dest = write_target(str(path.with_suffix(".md")), None) \
-                    if action == "pair" else path
+                message_id = hits[0]["id"]
+                dest = write_target(str(path.with_suffix(".md")), None)
                 detail = (f"Write {dest.name}; found message "
                           f"{message_id[:12]}... in mailbox {mb}")
                 if not dry_run:

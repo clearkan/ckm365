@@ -1,12 +1,13 @@
 """Offline tests for migrate_correspondence, the apply step of mr31re.
 
 It takes the planner's output and applies the actions that can be
-applied — upgrade (re-export an OKF v0.1 record in place), pair (write
-the .md record beside a lone .eml) and backfill-id (add the Message-ID a
-hand-written sidecar lacks, from its paired .eml) — locating messages in
-Graph by RFC 5322 Message-ID. dry_run is the default and does the
-lookups but writes nothing. Nothing is ever deleted, a hand-written body
-is never rewritten, and a second run changes nothing.
+applied — upgrade (rewrite an OKF v0.1 record's front matter to v0.2,
+body kept), pair (write the .md record beside a lone .eml, located in
+Graph by RFC 5322 Message-ID) and backfill-id (add the Message-ID a
+hand-written sidecar lacks, from its paired .eml). dry_run is the default
+and does the lookups but writes nothing. Nothing is ever deleted, no
+body is ever rewritten (6v3d56: a person may have written below the
+mail), and a second run changes nothing.
 """
 
 import re
@@ -114,36 +115,78 @@ def test_dry_run_looks_up_but_writes_nothing(tmp_path):
     r = by_name(result)
     assert r["old.md"] == {"name": "old.md", "action": "upgrade",
                            "outcome": "would-apply", "detail": r["old.md"]["detail"]}
+    assert "body kept" in r["old.md"]["detail"]
     assert r["evidence.eml"]["outcome"] == "would-apply"
     assert r["notes.md"]["outcome"] == "would-apply"
     assert snapshot(tmp_path) == before
-    # the lookups happened (so a dry run can say "not found"), nothing else
+    # the pair lookup happened (so a dry run can say "not found"), nothing
+    # else: upgrade and backfill-id are local rewrites
     assert all(req.method == "GET" for req in seen)
     filters = [req.url.params.get("$filter", "") for req in seen]
-    assert any(ID1 in f for f in filters) and any(ID2 in f for f in filters)
+    assert any(ID2 in f for f in filters) and not any(ID1 in f for f in filters)
 
 
 def test_dry_run_reports_a_message_graph_cannot_find(tmp_path):
-    (tmp_path / "old.md").write_text(v01("<gone@tenant-b.example>"))
+    (tmp_path / "evidence.eml").write_bytes(eml("<gone@tenant-b.example>"))
     ctx, _ = _ctx()
-    r = by_name(migrate.migrate_correspondence(ctx, str(tmp_path)))["old.md"]
+    r = by_name(migrate.migrate_correspondence(ctx, str(tmp_path)))["evidence.eml"]
     assert r["outcome"] == "not-found"
     assert "not found" in r["detail"].lower()
 
 
 # --- applying ---------------------------------------------------------------
 
-def test_upgrade_rewrites_a_v01_record_in_place(tmp_path):
+def test_upgrade_rewrites_only_the_front_matter_of_a_v01_record(tmp_path):
     (tmp_path / "old.md").write_text(v01(ID1))
-    ctx, _ = _ctx()
+    ctx, seen = _ctx()
     result = migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False)
     assert by_name(result)["old.md"]["outcome"] == "applied"
     text = (tmp_path / "old.md").read_text()
-    assert f'generated: {{by: "ckm365/{__version__}"' in text
-    assert f'internet_message_id: "{ID1}"' in text
-    assert "timestamp:" not in text and "exported_by:" not in text
-    assert "Body of m1." in text
+    head, _, body = text.partition("\n---\n")
+    assert (f'generated: {{by: "ckm365/{__version__}", '
+            'at: "2026-10-01T01:02:03Z"}') in head       # at: the old timestamp
+    assert f'internet_message_id: "{ID1}"' in head
+    assert 'mailbox: "operator@tenant-a.example"' in head  # other keys survive
+    assert "timestamp:" not in head and "exported_by:" not in head
+    assert body == v01(ID1).partition("\n---\n")[2]       # body byte for byte
+    assert not seen                                      # no Graph call
     assert sorted(p.name for p in tmp_path.iterdir()) == ["old.md"]  # no .part
+
+
+def test_upgrade_keeps_hand_written_sections_below_the_body(tmp_path):
+    # 6v3d56: on a real folder, 6 of 18 v0.1 records carried summaries and
+    # action tables a person had added after export. They must survive.
+    annotated = v01(ID1) + ("\n## Summary\n\nWhat to remember.\n\n"
+                            "| Owner | Action |\n|---|---|\n| me | reply |\n")
+    (tmp_path / "old.md").write_text(annotated)
+    ctx, _ = _ctx()
+    dry = by_name(migrate.migrate_correspondence(ctx, str(tmp_path)))["old.md"]
+    assert dry["outcome"] == "would-apply" and "body kept" in dry["detail"]
+    assert (tmp_path / "old.md").read_text() == annotated
+    migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False)
+    text = (tmp_path / "old.md").read_text()
+    assert text.partition("\n---\n")[2] == annotated.partition("\n---\n")[2]
+    assert "## Summary" in text and "| me | reply |" in text
+    assert "timestamp:" not in text
+
+
+def test_upgrade_preserves_crlf_line_endings(tmp_path):
+    (tmp_path / "old.md").write_bytes(v01(ID1).replace("\n", "\r\n").encode())
+    ctx, _ = _ctx()
+    migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False)
+    data = (tmp_path / "old.md").read_bytes()
+    assert b"\n" not in data.replace(b"\r\n", b"")
+    assert b"generated: {by:" in data and b"timestamp:" not in data
+
+
+def test_upgrade_fails_cleanly_on_a_v01_record_without_timestamp(tmp_path):
+    (tmp_path / "old.md").write_text(v01(ID1).replace(
+        'timestamp: "2026-10-01T01:02:03Z"\n', ""))
+    ctx, _ = _ctx()
+    before = snapshot(tmp_path)
+    r = by_name(migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False))
+    assert r["old.md"]["outcome"] == "failed" and "timestamp" in r["old.md"]["detail"]
+    assert snapshot(tmp_path) == before
 
 
 def test_pair_writes_the_record_beside_a_lone_eml(tmp_path):
@@ -184,27 +227,24 @@ def test_backfill_adds_the_id_and_keeps_the_hand_written_body_byte_for_byte(tmp_
     assert not seen                                     # no Graph call needed
 
 
-def test_upgrade_tries_the_records_own_mailbox_first(tmp_path):
-    (tmp_path / "old.md").write_text(v01(ID1).replace(
-        f'mailbox: "{MAILBOX}"', f'mailbox: "{SHARED}"'))
+def test_pair_looks_up_the_selected_mailbox(tmp_path):
+    (tmp_path / "evidence.eml").write_bytes(eml(ID2))
     ctx, seen = _ctx()
-    migrate.migrate_correspondence(ctx, str(tmp_path))
+    migrate.migrate_correspondence(ctx, str(tmp_path), mailbox=SHARED)
     first = next(req for req in seen if "$filter" in req.url.params)
     assert f"/users/{SHARED}/messages" in first.url.path
 
 
 def test_a_failure_on_one_file_does_not_stop_the_others_or_leave_residue(tmp_path):
-    (tmp_path / "a-old.md").write_text(v01(ID1))
-    (tmp_path / "b-old.md").write_text(v01(ID2))
+    (tmp_path / "a.eml").write_bytes(eml(ID1))
+    (tmp_path / "b.eml").write_bytes(eml(ID2))
     ctx, _ = _ctx(fail_get=("m1",))
-    before_a = (tmp_path / "a-old.md").read_bytes()
     result = migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False)
     r = by_name(result)
-    assert r["a-old.md"]["outcome"] == "failed"
-    assert "404" in r["a-old.md"]["detail"] or "ErrorItemNotFound" in r["a-old.md"]["detail"]
-    assert r["b-old.md"]["outcome"] == "applied"
-    assert (tmp_path / "a-old.md").read_bytes() == before_a
-    assert not list(tmp_path.glob("*.part"))
+    assert r["a.eml"]["outcome"] == "failed"
+    assert "404" in r["a.eml"]["detail"] or "ErrorItemNotFound" in r["a.eml"]["detail"]
+    assert r["b.eml"]["outcome"] == "applied"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["a.eml", "b.eml", "b.md"]
 
 
 # --- what it never does -----------------------------------------------------

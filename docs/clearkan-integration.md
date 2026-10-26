@@ -145,6 +145,8 @@ them.
   `migrate_correspondence`, for bringing old correspondence folders up to
   the current record structure. Additive only; nothing on the pinned
   surface changes.
+- **v2.10.1**: `migrate_correspondence`'s `upgrade` no longer rewrites
+  the body (6v3d56). Behaviour fix; no surface change.
 
 ---
 
