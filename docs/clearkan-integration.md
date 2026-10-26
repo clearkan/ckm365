@@ -141,6 +141,10 @@ them.
   `MessageSummary`, so listing rows carry it (`Message` still has it, by
   inheritance). `export_message` gains `dedupe_dir`/`force` and adds
   `internet_message_id` to its return. Additive only.
+- **v2.10.0**: two read-tier tools, `plan_correspondence_migration` and
+  `migrate_correspondence`, for bringing old correspondence folders up to
+  the current record structure. Additive only; nothing on the pinned
+  surface changes.
 
 ---
 

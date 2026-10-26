@@ -6,12 +6,19 @@ through Ctx.create and wrote there — harmless on a developer box, but a
 hard failure in any sandbox whose home directory is read-only (seen
 2026-10-26 under Codex's workspace-write sandbox), and a test suite has
 no business touching the directory that holds real token caches.
+
+The LIVE suites are the exception by definition: they need the real
+caches, so the override steps aside when CKM365_LIVE_ACCOUNT is set.
 """
+
+import os
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def _state_home(tmp_path_factory, monkeypatch):
+    if os.environ.get("CKM365_LIVE_ACCOUNT"):
+        return
     monkeypatch.setenv("XDG_STATE_HOME",
                        str(tmp_path_factory.mktemp("state")))

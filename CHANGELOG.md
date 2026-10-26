@@ -3,6 +3,56 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.10.0] — 2026-10-26
+
+### Added
+- **Correspondence migration helper** (mr31re), two read-tier tools in
+  the new `tools/mail/migrate.py`, for folders built before dedupe and
+  OKF v0.2:
+  - `plan_correspondence_migration(dir)`: local only, no Graph, no
+    writes, no recursion. Classifies every `.md`/`.markdown`/`.txt`
+    record (OKF v0.2, v0.1, hand-written, no front matter), `.eml` and
+    `.msg`, pairs records to raw mail by RFC 5322 Message-ID (brackets
+    optional), flags duplicates first-wins in name order, and proposes
+    one action per file: `none`, `upgrade`, `backfill-id`, `pair`,
+    `flag-duplicate`, `manual` (with the reason). Other suffixes are
+    counted, subfolders listed, never entered.
+  - `migrate_correspondence(dir, actions=None, dry_run=True)`: applies
+    `upgrade` (re-render an OKF v0.1 record in place), `pair` (write the
+    record beside a lone `.eml`, refusing a taken name) and
+    `backfill-id` (add the Message-ID a hand-written sidecar lacks, from
+    its same-stem `.eml`, keeping the body byte for byte). Messages are
+    located with `$filter=internetMessageId eq '<id>'`, first in the
+    record's own `mailbox`, then the caller's. The default dry run does
+    the lookups but writes nothing, so it can report `not-found`. Never
+    deletes; idempotent; one file's failure does not stop the rest and
+    leaves no residue. Fenced by `CKM365_DOWNLOAD_ROOT`.
+  - Verified: 37 offline tests; the planner run read-only over four real
+    correspondence folders (58-620 items, under 0.2 s each; zero
+    duplicates, 18 v0.1 records per folder, 47 lone `.eml` in the
+    largest). The Message-ID filter verified live on both delegated
+    tenants: resolves across folders from the mailbox root, finds mail
+    under an hour old, zero rows for an unknown id. Sub-five-minute
+    arrival not measured; subject filters lag there, so `not-found`
+    says "may not be indexed yet".
+- The Message-ID helpers in `export.py` (`id_key`, `front_matter_id`,
+  `eml_id`) are shared names now, and the record rendering is a shared
+  helper the apply step reuses. No behaviour change.
+
+### Changed
+- The offline suite no longer touches `~/.local/state/ckm365`: a
+  conftest points `XDG_STATE_HOME` at a temp dir. Needed for any sandbox
+  with a read-only home; it was also never right for a test suite to
+  reach the directory holding real token caches.
+- The live export test sliced a record's front matter on bare `---`,
+  which a message whose description contains a dash run defeated; it now
+  partitions on the closing fence. Test only.
+
+### Process
+- First release with Codex as co-pilot (omni's copilot card loop; see
+  AGENTS.md "Codex as co-pilot"): three cards, each a test-first spec
+  on main. Codex implemented; Claude designed, reviewed and merged.
+
 ## [2.9.0] — 2026-10-26
 
 ### Added

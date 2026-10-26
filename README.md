@@ -122,6 +122,20 @@ existing file's path, whether that file is a `.md` record or an `.eml`.
 `list_messages` rows carry `internet_message_id` too, so an agent can
 check its folder before fetching anything.
 
+Folders built before dedupe and OKF v0.2 exist, and every structure change
+widens the gap. `plan_correspondence_migration` reads ONE such folder
+(local only, no Graph, never recurses) and proposes an action per file:
+`none`, `upgrade` (an OKF v0.1 record), `backfill-id` (a hand-written
+sidecar whose same-stem `.eml` carries the Message-ID), `pair` (a lone
+`.eml` with no record), `flag-duplicate` (same Message-ID, same kind —
+the spare copy is your `git mv`) or `manual` (with the reason per file;
+`.msg` stays unopened). `migrate_correspondence` applies `upgrade`, `pair`
+and `backfill-id`, locating messages by Message-ID across the record's
+own mailbox and yours; `dry_run=True` is the default and still does the
+lookups, so it can say `not-found`. It never deletes, never rewrites a
+hand-written body, and a second run changes nothing. Both sit in the read
+tier and are fenced by `CKM365_DOWNLOAD_ROOT` like `export_message`.
+
 Prefer `.md` for anything agents will search —
 Exchange base64-encodes body parts, so a raw `.eml` often contains none of
 the words in the message (measured: greppable 7/10 for `.eml` vs 10/10 for
@@ -237,5 +251,6 @@ covering the send tier end to end; v2.6.0 closes the compose loop
 (`revise_draft`, `discard_draft`, `remove_attachment`, read-tier
 `verify_message`, and per-profile HTML signatures) — offline-verified;
 its live draft-cycle run is still outstanding; v2.9.0 adds `ckm365 audit`
-and Message-ID dedupe on `export_message`. Security + simplification
+and Message-ID dedupe on `export_message`; v2.10.0 adds the
+correspondence migration planner and apply step. Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).

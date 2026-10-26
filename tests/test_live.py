@@ -191,7 +191,7 @@ def test_export_message_both_formats(ctx):
                 sender = (newest[0].sender.address
                           if newest[0].sender else "").lower()
                 expected = "outbound" if sender == mb.lower() else "inbound"
-                assert f'"{expected}"' in real.read_text().split("---")[1]
+                assert f'"{expected}"' in real.read_text().partition("\n---\n")[0]
 
             raw = Path(tmp) / "record.eml"
             res = mail.export_message(ctx, draft.id, str(raw), mailbox=MAILBOX)
