@@ -39,7 +39,7 @@ from .drafts import (create_draft, create_forward_draft, create_persona_reply,
                      create_reply_draft, discard_draft, revise_draft,
                      send_draft, update_draft)
 from .export import export_message
-from .migrate import plan_correspondence_migration
+from .migrate import migrate_correspondence, plan_correspondence_migration
 from .read import (get_message, get_message_headers, group_by_sender,
                    list_mail_folders, list_messages)
 from .triage import (complete_flag, flag, mark_read, mark_unread, move_message,
@@ -53,7 +53,7 @@ __all__ = [
     "export_message", "flag", "get_message", "get_message_headers",
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",
-    "plan_correspondence_migration",
+    "migrate_correspondence", "plan_correspondence_migration",
     "remove_attachment", "revise_draft", "send_draft", "unflag",
     "update_draft", "verify_message",
 ]

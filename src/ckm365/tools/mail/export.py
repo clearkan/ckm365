@@ -247,6 +247,17 @@ def _already_exported(folder: Path, internet_message_id: str) -> Path | None:
     return None
 
 
+def record_bytes(g: Graph, mailbox: str, message_id: str) -> tuple[bytes, Message, int]:
+    """Fetch and render the same OKF record for export and migration."""
+    message = Message.from_graph(
+        g.get(message_path(mailbox, message_id),
+              params={"$select": Message.SELECT}, headers=prefer("text")))
+    items = attachments_of(g, mailbox, message_id) if message.has_attachments else []
+    record = _record(message, items, mailbox, __version__,
+                     _sent_folder_id(g, mailbox)).encode("utf-8")
+    return record, message, len(items)
+
+
 def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
                    dedupe_dir: str | None = None, force: bool = False,
                    account: str | None = None,
@@ -331,13 +342,8 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
         folder = confine(Path(dedupe_dir), "dedupe_dir")
         if not folder.is_dir():
             raise ValueError(f"dedupe_dir is not a directory: {folder}")
-    message = imid = None
-    if suffix in _EXPORT_TEXT:
-        message = Message.from_graph(
-            g.get(message_path(mb, message_id),
-                  params={"$select": Message.SELECT}, headers=prefer("text")))
-        imid = message.internet_message_id
-    elif folder:   # .eml: one small GET for the key, only when it is needed
+    imid = None
+    if folder:   # one small GET for the key, only when it is needed
         imid = g.get(message_path(mb, message_id),
                      params={"$select": "internetMessageId"}
                      ).get("internetMessageId")
@@ -349,16 +355,14 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
         return {"already_exported": str(hit), "internet_message_id": imid}
     dest = write_target(dest_path, None)
     count: int | None = None
-    if message is None:
+    if suffix in _EXPORT_RAW:
         written = write_atomic(
             dest, lambda part: g.download(message_path(mb, message_id,
                                                        "/$value"), part))
     else:
-        items = attachments_of(g, mb, message_id) if message.has_attachments else []
-        record = _record(message, items, mb, __version__,
-                         _sent_folder_id(g, mb)).encode("utf-8")
+        record, message, count = record_bytes(g, mb, message_id)
+        imid = message.internet_message_id
         written = write_atomic(dest, lambda part: part.write_bytes(record))
-        count = len(items)
     log.info("tool=export_message mailbox=%r message_id=%r format=%s bytes=%d",
              mb, message_id, suffix.lstrip("."), written)
     return {"path": str(dest), "bytes": written, "format": suffix.lstrip("."),

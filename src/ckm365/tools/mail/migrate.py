@@ -1,32 +1,52 @@
-"""Local, read-only planning for old correspondence folders."""
+"""Plan and apply local correspondence migrations without altering mail."""
 
+import json
+import logging
 from collections import Counter
 from pathlib import Path
 
+from ...graph import GraphError, mailbox_path
 from ..context import Ctx
-from .disk import confine
-from .export import _MAX_FRONT_MATTER, eml_id, front_matter_id, id_key
+from .disk import confine, write_atomic, write_target
+from .export import (_MAX_FRONT_MATTER, eml_id, front_matter_id, id_key,
+                     record_bytes)
+
+log = logging.getLogger("ckm365")
+
+
+def _front_matter(path: Path) -> dict[str, str] | None:
+    """Read bounded top-level scalar keys, without a YAML dependency."""
+    values = {}
+    with path.open(encoding="utf-8", errors="replace") as f:
+        if f.readline().strip() != "---":
+            return None
+        for _, line in zip(range(_MAX_FRONT_MATTER), f):
+            if line.strip() == "---":
+                return values
+            if line[:1].isspace():
+                continue
+            key, separator, value = line.partition(":")
+            if separator:
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] == '"':
+                    try:
+                        value = json.loads(value)
+                    except ValueError:
+                        value = value[1:-1]
+                elif len(value) >= 2 and value[0] == value[-1] == "'":
+                    value = value[1:-1].replace("''", "'")
+                values[key.strip()] = value
+    return None
 
 
 def _record_version(path: Path) -> str:
     """Recognise bounded front matter by its top-level keys only."""
-    keys = set()
-    with path.open(encoding="utf-8", errors="replace") as f:
-        if f.readline().strip() != "---":
-            return "none"
-        for _, line in zip(range(_MAX_FRONT_MATTER), f):
-            if line.strip() == "---":
-                break
-            if line[:1].isspace():
-                continue
-            key, separator, _ = line.partition(":")
-            if separator:
-                keys.add(key.strip())
-        else:
-            return "none"
+    keys = _front_matter(path)
+    if keys is None:
+        return "none"
     if "generated" in keys:
         return "okf-0.2"
-    if keys & {"timestamp", "exported_by"}:
+    if keys.keys() & {"timestamp", "exported_by"}:
         return "okf-0.1"
     return "hand-written"
 
@@ -144,3 +164,115 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
     return {"dir": str(folder), "items": items,
             "counts": dict(Counter(item["action"] for item in items)),
             "skipped": dict(skipped), "subfolders": subfolders}
+
+
+def _backfill_bytes(path: Path, internet_message_id: str) -> bytes:
+    """Insert one key into raw front matter, preserving every existing byte."""
+    lines = path.read_bytes().splitlines(keepends=True)
+    if lines and lines[0].strip() == b"---":
+        for i in range(1, min(len(lines), _MAX_FRONT_MATTER + 1)):
+            if lines[i].strip() == b"---":
+                newline = b"\r\n" if lines[0].endswith(b"\r\n") else b"\n"
+                field = "internet_message_id: " + json.dumps(
+                    internet_message_id, ensure_ascii=False)
+                lines.insert(i, field.encode("utf-8") + newline)
+                return b"".join(lines)
+    raise ValueError("No closed front matter for backfill-id")
+
+
+def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = None,
+                           dry_run: bool = True, account: str | None = None,
+                           mailbox: str | None = None) -> dict:
+    """Apply a correspondence migration plan to ONE local folder.
+
+    Run plan_correspondence_migration first and READ its per-file actions.
+    Dry run is the default: it looks up messages but writes nothing, so
+    review what would change before calling again with dry_run=false.
+    actions defaults to upgrade, pair and backfill-id; pass a subset to
+    limit this pass. No mail in Graph is ever changed.
+
+    upgrade re-exports our old OKF v0.1 record in place. pair writes a .md
+    record beside a lone .eml and refuses an existing destination file.
+    backfill-id inserts the paired .eml's Message-ID into a hand-written
+    record's front matter, without Graph. Hand-written bodies are NEVER
+    rewritten, nothing is deleted, and writes are atomic.
+
+    Outcomes: would-apply describes a dry-run write; applied means written;
+    skipped carries the planner's reason for manual/duplicate items, or
+    says the action was not requested. Current items (none) are omitted.
+    not-found means no Message-ID hit in the record's mailbox or the
+    selected mailbox. A message delivered minutes ago may not be indexed
+    yet: a missing hit must not be assumed to mean the message is gone.
+    failed carries a per-file error; other items still proceed.
+
+    Read tier, no new consent. CKM365_DOWNLOAD_ROOT fences the directory
+    and destinations, falling back to CKM365_ATTACH_ROOT. The result gives
+    per-file details and outcome counts; only counts reach the log.
+    """
+    applicable = {"upgrade", "pair", "backfill-id"}
+    requested = applicable if actions is None else set(actions)
+    if requested - applicable:
+        raise ValueError("actions must contain only upgrade, pair, backfill-id")
+    plan = plan_correspondence_migration(ctx, dir)
+    folder = Path(plan["dir"])
+    results = []
+    for item in plan["items"]:
+        action = item["action"]
+        if action == "none":
+            continue
+        result = dict(name=item["name"], action=action,
+                      outcome="skipped", detail=item["reason"] or "")
+        results.append(result)
+        if action not in applicable:
+            continue
+        if action not in requested:
+            result["detail"] = "Action not requested in actions"
+            continue
+        try:
+            path = confine(folder / item["name"], "source")
+            imid = item["internet_message_id"]
+            if not imid:
+                raise ValueError("No Message-ID available for migration")
+            if action == "backfill-id":
+                data = _backfill_bytes(path, imid)
+                detail = f"Insert internet_message_id into {path.name} front matter"
+                dest = path
+            else:
+                g, target_mailbox = ctx.target(account, mailbox)
+                own = (_front_matter(path) or {}).get("mailbox") \
+                    if item["kind"] == "record" else None
+                candidates = list(dict.fromkeys(
+                    mb for mb in (own, target_mailbox) if mb))
+                escaped = imid.replace("'", "''")
+                found = None
+                for mb in candidates:
+                    hits = g.get(mailbox_path(mb, "messages"), params={
+                        "$filter": f"internetMessageId eq '{escaped}'",
+                        "$select": "id", "$top": 2}).get("value", [])
+                    if hits:
+                        found = (mb, hits[0]["id"])
+                        break
+                if found is None:
+                    result.update(outcome="not-found", detail=(
+                        f"Message-ID not found in mailboxes: {', '.join(candidates)}. "
+                        "A message delivered minutes ago may not be indexed yet; "
+                        "do not assume it is gone."))
+                    continue
+                mb, message_id = found
+                dest = write_target(str(path.with_suffix(".md")), None) \
+                    if action == "pair" else path
+                detail = (f"Write {dest.name}; found message "
+                          f"{message_id[:12]}... in mailbox {mb}")
+                if not dry_run:
+                    data, _, _ = record_bytes(g, mb, message_id)
+            if dry_run:
+                result.update(outcome="would-apply", detail=f"Would {detail}")
+            else:
+                write_atomic(dest, lambda part: part.write_bytes(data))
+                result.update(outcome="applied", detail=detail)
+        except (GraphError, OSError, ValueError) as exc:
+            result.update(outcome="failed", detail=str(exc))
+    counts = dict(Counter(result["outcome"] for result in results))
+    log.info("tool=migrate_correspondence counts=%s", counts)
+    return {"dir": str(folder), "dry_run": dry_run,
+            "results": results, "counts": counts}
