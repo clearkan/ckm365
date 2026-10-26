@@ -280,11 +280,11 @@ def test_tools_for_presets():
     assert mail.discard_draft in tools_for(["mail"], write=True)
     # "all" deliberately excludes teams — it has its own consent tier, so
     # it must be asked for by name rather than appearing in every session.
-    assert len(tools_for(["all"], write=True)) == 33
-    assert len(tools_for(["all"], write=True, send=True)) == 34
+    assert len(tools_for(["all"], write=True)) == 34
+    assert len(tools_for(["all"], write=True, send=True)) == 35
     assert teams.list_teams not in tools_for(["all"], write=True, send=True)
     assert teams.list_teams in tools_for(["all", "teams"])
-    assert len(tools_for(["all", "teams"], write=True, send=True)) == 37
+    assert len(tools_for(["all", "teams"], write=True, send=True)) == 38
     with pytest.raises(ValueError, match="require write"):
         tools_for(["mail"], send=True)
     with pytest.raises(ValueError, match="unknown preset"):
