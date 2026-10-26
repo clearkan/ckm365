@@ -26,14 +26,29 @@ def safe_name(name: str) -> str:
     return base if base not in ("", ".", "..") else "attachment"
 
 
+def confine(path: Path, what: str) -> Path:
+    """Resolve a local path and refuse it outside the download root.
+
+    CKM365_DOWNLOAD_ROOT, falling back to CKM365_ATTACH_ROOT so an operator
+    who already fenced the read side gets the write side fenced by the same
+    setting. Used for what these tools write AND for what export_message's
+    dedupe scan reads, so one setting bounds where they touch the disk.
+    """
+    path = path.expanduser().resolve()
+    root = os.environ.get("CKM365_DOWNLOAD_ROOT") or \
+        os.environ.get("CKM365_ATTACH_ROOT")
+    if root and not path.is_relative_to(Path(root).expanduser().resolve()):
+        raise ValueError(f"{what} is outside the download root ({root}); "
+                         "refusing to touch it")
+    return path
+
+
 def write_target(dest_path: str, dir_name: str | None) -> Path:
     """Resolve where bytes may land, or refuse with the reason. Shared by
     every tool here that writes to local disk.
 
-    Mirrors add_attachment's containment in the opposite direction:
-    CKM365_DOWNLOAD_ROOT confines writes, falling back to
-    CKM365_ATTACH_ROOT so an operator who already fenced the read side
-    gets the write side fenced by the same setting.
+    Mirrors add_attachment's containment in the opposite direction (see
+    confine).
 
     dir_name is the filename to use when dest_path names an existing
     DIRECTORY; None means a directory is an error, because that caller has
@@ -47,12 +62,7 @@ def write_target(dest_path: str, dir_name: str | None) -> Path:
             raise ValueError(f"dest_path is a directory ({dest}); name the "
                              "file to write, including its extension")
         dest = dest / safe_name(dir_name)
-    dest = dest.resolve()
-    root = os.environ.get("CKM365_DOWNLOAD_ROOT") or \
-        os.environ.get("CKM365_ATTACH_ROOT")
-    if root and not dest.is_relative_to(Path(root).expanduser().resolve()):
-        raise ValueError(f"destination is outside the download root ({root}); "
-                         "refusing to write there")
+    dest = confine(dest, "destination")
     if dest.exists():
         raise ValueError(f"refusing to overwrite an existing file: {dest}")
     if not dest.parent.is_dir():

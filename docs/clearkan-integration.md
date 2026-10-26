@@ -130,13 +130,17 @@ them.
   own merits. ClearKan did not ask for them, and item 6 still holds for
   its intake.
 - **v2.3.0**: `MessageSummary` gains `to`/`cc`. It still has no `webLink`
-  or `internetMessageId`.
+  (and had no `internetMessageId` until v2.9.0).
 - **v2.7.0**: **behaviour change on the SemVer'd surface.** `revise_draft`
   now raises `ValueError` on a draft with no compose fence, where it used
   to silently duplicate the body. `insert_if_unfenced=True` restores the
   old insert.
 - **v2.8.0**: `export_message` records move to OKF v0.2. A re-export diffs
   once, on `timestamp`/`exported_by` → `generated`.
+- **v2.9.0**: `internet_message_id` moves from `Message` up to
+  `MessageSummary`, so listing rows carry it (`Message` still has it, by
+  inheritance). `export_message` gains `dedupe_dir`/`force` and adds
+  `internet_message_id` to its return. Additive only.
 
 ---
 

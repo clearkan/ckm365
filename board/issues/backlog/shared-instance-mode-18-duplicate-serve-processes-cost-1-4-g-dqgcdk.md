@@ -123,9 +123,9 @@ AND THE OBVIOUS REFINEMENT DOES NOT RESCUE IT. The reporter asked whether
 the sends were concentrated in one profile, which would have made a
 per-profile `allow_send = false` on the others cheap and non-breaking.
 Correlated each call against its `account` argument: they are not
-concentrated. `intixa` 26 calls over 5 sessions, `axomem` 23 calls over 10
-sessions. Both device_code profiles send actively, and the third
-(`intixa-app`) is already `allow_send = false` and app-only. There is no
+concentrated. One profile made 26 calls over 5 sessions, the other 23
+calls over 10 sessions. Both device_code profiles send actively, and the
+third (the app-only one) is already `allow_send = false`. There is no
 quiet profile to close.
 
 So the honest framing for the owner is a choice between two real options,

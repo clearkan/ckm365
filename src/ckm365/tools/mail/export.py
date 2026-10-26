@@ -1,10 +1,11 @@
 """Exporting a message to a file an agent (or a repo) can live with.
 
 The format comes from the destination extension, and the .md record is an
-Open Knowledge Format v0.1 document — see export_message.
+Open Knowledge Format v0.2 document — see export_message.
 """
 
 import logging
+from email import message_from_bytes
 from pathlib import Path
 
 from ... import __version__
@@ -13,7 +14,7 @@ from ...models import Attachment, Message
 from ..context import Ctx
 from .attachments import attachments_of
 from .common import message_path, prefer
-from .disk import write_atomic, write_target
+from .disk import confine, write_atomic, write_target
 
 log = logging.getLogger("ckm365")
 
@@ -182,7 +183,72 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
     return "\n".join(lines)
 
 
+# --- dedupe by Message-ID (4qn81m) ------------------------------------------
+#
+# The Graph id cannot tell you a message is already on disk: the same
+# message has a different id in every mailbox holding a copy (the sender's
+# Sent Items, a cc'd agent mailbox) and a new one after a move. The RFC 5322
+# Message-ID is the same everywhere and never changes, the .md record already
+# writes it as internet_message_id, and every .eml carries it as a header.
+
+_MAX_FRONT_MATTER = 200   # lines; a front matter longer than this is not ours
+
+
+def _id_key(value: str | None) -> str:
+    """A Message-ID reduced to what two spellings of it share: hand-written
+    sidecars drop the angle brackets that Graph and MIME both keep."""
+    return (value or "").strip().strip("<>").strip()
+
+
+def _front_matter_id(path: Path) -> str | None:
+    """internet_message_id from a record's YAML front matter, or None."""
+    with path.open(encoding="utf-8", errors="replace") as f:
+        if f.readline().strip() != "---":
+            return None
+        for _, line in zip(range(_MAX_FRONT_MATTER), f):
+            if line.strip() == "---":
+                return None
+            key, _, value = line.partition(":")
+            if key.strip() == "internet_message_id":
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+                return value or None
+    return None
+
+
+def _eml_id(path: Path) -> str | None:
+    """The Message-ID header of a raw .eml — read up to the first blank line
+    only, so a large attachment is never pulled into memory."""
+    head = []
+    with path.open("rb") as f:
+        for line in f:
+            if not line.strip():
+                break
+            head.append(line)
+    return message_from_bytes(b"".join(head)).get("Message-ID")
+
+
+def _already_exported(folder: Path, internet_message_id: str) -> Path | None:
+    """The first file in folder (not its subfolders) recording this
+    Message-ID, in name order so the answer is stable."""
+    want = _id_key(internet_message_id)
+    for path in sorted(folder.iterdir()):
+        suffix = path.suffix.lower()
+        if not path.is_file() or suffix not in _EXPORT_TEXT | _EXPORT_RAW:
+            continue
+        try:
+            found = (_eml_id(path) if suffix in _EXPORT_RAW
+                     else _front_matter_id(path))
+        except OSError:
+            continue                  # unreadable: cannot be a match we know of
+        if found and _id_key(found) == want:
+            return path
+    return None
+
+
 def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
+                   dedupe_dir: str | None = None, force: bool = False,
                    account: str | None = None,
                    mailbox: str | None = None) -> dict:
     """Write one message to a file — the way to keep correspondence in a repo.
@@ -232,9 +298,26 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
     the message reaches the log, and the body never enters your context
     unless you read the file back.
 
-    Returns {"path", "bytes", "format", "attachments"} — "attachments" is
-    how many the record lists, or null for .eml, where they are embedded
-    in the MIME itself.
+    ALREADY FILED? Pass dedupe_dir (usually the folder you are exporting
+    into) and the export first checks whether that folder already holds this
+    message. The key is the RFC 5322 Message-ID (`internet_message_id`),
+    NOT the message_id you pass in: Graph ids differ between mailboxes —
+    the sender's Sent Items copy and a cc'd mailbox's copy have different
+    ids — and change when a message is moved, while the Message-ID is the
+    same in every copy, forever. The check reads the front matter of the
+    folder's .md/.markdown/.txt files and the headers of its .eml files
+    (not its subfolders), so it finds a record however it was named and
+    whichever mailbox it was exported from. On a hit nothing is written
+    and you get {"already_exported": "<path>", "internet_message_id": ...};
+    pass force=true to write anyway. A message Graph gives no Message-ID
+    is exported unchecked. list_messages rows carry internet_message_id
+    too, so you can grep the folder for it before calling this at all.
+
+    Returns {"path", "bytes", "format", "attachments",
+    "internet_message_id"} — "attachments" is how many the record lists,
+    or null for .eml, where they are embedded in the MIME itself;
+    "internet_message_id" is null for an .eml written without dedupe_dir,
+    since that path never reads the message's properties.
     """
     suffix = Path((dest_path or "").strip()).suffix.lower()
     if suffix not in _EXPORT_TEXT | _EXPORT_RAW:
@@ -243,16 +326,34 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
             " — the extension chooses the format (.md for a greppable record, "
             ".eml for raw MIME)")
     g, mb = ctx.target(account, mailbox)
+    folder = None
+    if dedupe_dir is not None and not force:
+        folder = confine(Path(dedupe_dir), "dedupe_dir")
+        if not folder.is_dir():
+            raise ValueError(f"dedupe_dir is not a directory: {folder}")
+    message = imid = None
+    if suffix in _EXPORT_TEXT:
+        message = Message.from_graph(
+            g.get(message_path(mb, message_id),
+                  params={"$select": Message.SELECT}, headers=prefer("text")))
+        imid = message.internet_message_id
+    elif folder:   # .eml: one small GET for the key, only when it is needed
+        imid = g.get(message_path(mb, message_id),
+                     params={"$select": "internetMessageId"}
+                     ).get("internetMessageId")
+    # Checked BEFORE write_target, so re-running an export that already
+    # landed answers "already exported" rather than "refusing to overwrite".
+    if folder and imid and (hit := _already_exported(folder, imid)):
+        log.info("tool=export_message mailbox=%r message_id=%r "
+                 "already_exported=%r", mb, message_id, hit.name)
+        return {"already_exported": str(hit), "internet_message_id": imid}
     dest = write_target(dest_path, None)
     count: int | None = None
-    if suffix in _EXPORT_RAW:
+    if message is None:
         written = write_atomic(
             dest, lambda part: g.download(message_path(mb, message_id,
                                                        "/$value"), part))
     else:
-        message = Message.from_graph(
-            g.get(message_path(mb, message_id),
-                  params={"$select": Message.SELECT}, headers=prefer("text")))
         items = attachments_of(g, mb, message_id) if message.has_attachments else []
         record = _record(message, items, mb, __version__,
                          _sent_folder_id(g, mb)).encode("utf-8")
@@ -261,4 +362,4 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
     log.info("tool=export_message mailbox=%r message_id=%r format=%s bytes=%d",
              mb, message_id, suffix.lstrip("."), written)
     return {"path": str(dest), "bytes": written, "format": suffix.lstrip("."),
-            "attachments": count}
+            "attachments": count, "internet_message_id": imid}

@@ -73,6 +73,16 @@ def test_summary_omits_bcc_and_headers_but_the_full_message_keeps_bcc():
     assert [r.address for r in full.bcc] == ["archive@tenant-a.example"]
 
 
+def test_listing_rows_carry_the_rfc_5322_message_id():
+    """4qn81m: the Message-ID is the only key shared by every copy of a
+    message, so a caller filing mail can check its folder before fetching."""
+    assert "internetMessageId" in MessageSummary.SELECT
+    row = MessageSummary.from_graph(
+        {"id": "m1", "internetMessageId": "<abc@tenant-b.example>"})
+    assert row.internet_message_id == "<abc@tenant-b.example>"
+    assert MessageSummary.from_graph({"id": "m1"}).internet_message_id is None
+
+
 def test_missing_recipients_project_to_empty_lists():
     summary = MessageSummary.from_graph({"id": "m1"})
     assert summary.to == [] and summary.cc == []

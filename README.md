@@ -105,14 +105,22 @@ has not consented to it.
 format: **`.md`** for a greppable record or **`.eml`** for byte-exact MIME.
 
 The `.md` record is an **[Open Knowledge Format](https://openknowledgeformat.com/)
-v0.1 document** — YAML front matter with OKF's
-`type`/`title`/`description`/`resource`/`tags`/`timestamp`, mail-specific
+v0.2 document** — YAML front matter with OKF's
+`type`/`title`/`description`/`resource`/`tags`/`generated`, mail-specific
 extension keys beneath it (from, to, cc, mailbox, message ids, bulk and
 auto-reply flags), the body as plain text, then an attachment manifest
 carrying the ids `download_attachment` needs. It drops into an `okf/` repo
 unmodified, and `tags` carries the facets worth filtering on (`email`,
 `inbound`/`outbound`, `attachments`, `bulk`, `auto-reply`). Re-exporting a
 message is byte-identical, so git shows no diff.
+
+To avoid filing the same message twice, pass `dedupe_dir` (usually the
+folder being exported into). The key is the RFC 5322 Message-ID, which is
+the same in every mailbox's copy and survives a move; the Graph id is
+neither. A hit writes nothing and returns `already_exported` with the
+existing file's path, whether that file is a `.md` record or an `.eml`.
+`list_messages` rows carry `internet_message_id` too, so an agent can
+check its folder before fetching anything.
 
 Prefer `.md` for anything agents will search —
 Exchange base64-encodes body parts, so a raw `.eml` often contains none of
@@ -228,5 +236,6 @@ greppable `.md` record or raw `.eml`) and an opt-in live send-cycle test
 covering the send tier end to end; v2.6.0 closes the compose loop
 (`revise_draft`, `discard_draft`, `remove_attachment`, read-tier
 `verify_message`, and per-profile HTML signatures) — offline-verified;
-its live draft-cycle run is still outstanding. Security + simplification
+its live draft-cycle run is still outstanding; v2.9.0 adds `ckm365 audit`
+and Message-ID dedupe on `export_message`. Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).

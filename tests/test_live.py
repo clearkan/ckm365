@@ -165,11 +165,19 @@ def test_export_message_both_formats(ctx):
             assert token in text                     # plain text, greppable
             assert "<p>" not in text                 # Graph converted the HTML
             assert res["format"] == "md" and res["attachments"] == 0
-            # OKF v0.1 front matter, from REAL Graph fields
+            # OKF v0.2 front matter, from REAL Graph fields
             assert 'type: "Email"' in text
             assert 'title: "ckm365 live export"' in text
             assert f'description: "{token}' in text  # Graph's own preview
-            assert "timestamp: " in text and "resource: " in text
+            assert "generated: {by: " in text and "resource: " in text
+            # 4qn81m: Graph gives even a draft a Message-ID, and a second
+            # export into the same folder finds it, in either format
+            assert res["internet_message_id"]
+            for again in ("again.md", "again.eml"):
+                hit = mail.export_message(ctx, draft.id, str(Path(tmp) / again),
+                                          dedupe_dir=tmp, mailbox=MAILBOX)
+                assert hit["already_exported"] == str(record), again
+            assert sorted(p.name for p in Path(tmp).iterdir()) == ["record.md"]
             # an unsent draft has no `from`, so no direction is claimed
             assert 'tags: ["email"]' in text
 

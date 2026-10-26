@@ -3,9 +3,31 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
-## [Unreleased]
+## [2.9.0] — 2026-10-26
 
 ### Added
+- **Message-ID dedupe on `export_message`** (4qn81m): a new `dedupe_dir`
+  argument checks whether that folder already holds the message before
+  writing. On a hit nothing is written and the tool returns
+  `{"already_exported": "<path>", "internet_message_id": ...}`;
+  `force=true` writes anyway.
+  - The key is the RFC 5322 Message-ID, not the Graph id. The Graph id
+    differs in every mailbox holding a copy and changes on a move, so two
+    sessions exporting from the sender's Sent Items and a cc'd mailbox
+    could not tell they had the same message.
+  - The scan reads the front matter of the folder's `.md`/`.markdown`/
+    `.txt` files and the headers of its `.eml` files, not subfolders. A
+    hand-written sidecar matches with or without angle brackets.
+  - It runs before the overwrite check, so re-running an export that
+    already landed answers "already exported" instead of failing.
+  - `dedupe_dir` is fenced by `CKM365_DOWNLOAD_ROOT` like the destination.
+  - Every successful export now returns `internet_message_id` as well.
+- **`internet_message_id` on every `list_messages` row** (and on delta
+  rows from `list_new_messages`): an agent can grep its folder before
+  fetching anything. Measured cost +~105 bytes/row (+10-11%) on both
+  tenants. The field moved from `Message` up to `MessageSummary`;
+  `Message` keeps it by inheritance.
+
 - **`ckm365 audit`** (CKM-54): a read-only audit of mailbox access that
   runs at whatever scope this machine's credentials allow. It covers three
   sources:
@@ -21,6 +43,16 @@ All notable changes to ckm365 are documented here. Format follows
   Sections it can't run print their enable steps. Output is text or
   `--md`, and the exit code is 1 on any RISK finding. See
   `docs/access-audit.md`.
+
+### Fixed
+- The live export test still asserted the `timestamp:` line that v2.8.0
+  removed, so it could not pass against v2.8.0. It now checks `generated`.
+
+### Verified
+- Offline suite green. Live suite 14/14 on both tenants, including a new
+  dedupe round trip: a draft exported to `.md`, then re-exported as `.md`
+  and `.eml` into the same folder, both answered `already_exported` and
+  wrote nothing. `live-smoke.py` and a delta bootstrap OK on both.
 
 ## [2.8.0] — 2026-09-16
 

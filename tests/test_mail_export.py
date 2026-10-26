@@ -9,6 +9,7 @@ byte-identical output on re-export.
 import httpx
 import pytest
 
+from ckm365 import __version__
 from ckm365.config import Profile
 from ckm365.graph import Graph
 from ckm365.tools import Ctx, mail
@@ -86,7 +87,8 @@ def test_markdown_record_is_greppable_and_complete(tmp_path):
     text = dest.read_text(encoding="utf-8")
     assert BODY in text                      # the point: plain text on disk
     assert res == {"path": str(dest), "bytes": len(text.encode()),
-                   "format": "md", "attachments": 1}
+                   "format": "md", "attachments": 1,
+                   "internet_message_id": "<abc123@tenant-b.example>"}
     for line in (
             # OKF v0.1 core (openknowledgeformat.com): the record IS an OKF
             # document, so it drops into an okf/ repo unmodified
@@ -99,7 +101,7 @@ def test_markdown_record_is_greppable_and_complete(tmp_path):
             # OKF v0.2 provenance: the actor convention <producer>/<version>,
             # and `at` is the MESSAGE's time, not the export's — that is what
             # keeps the record deterministic (see the next test)
-            'generated: {by: "ckm365/2.8.0", at: "2026-08-10T09:15:00Z"}',
+            f'generated: {{by: "ckm365/{__version__}", at: "2026-08-10T09:15:00Z"}}',
             # extension keys: the mail specifics OKF has no opinion about
             'from: "Alex Doe <other-user@tenant-b.example>"',
             f'to: "Ops <{MAILBOX}>"',
@@ -239,3 +241,131 @@ def test_ordinary_inbound_mail_is_still_inbound(tmp_path):
     mail.export_message(ctx, "m1", str(dest))
     front = dest.read_text().split("---")[1]
     assert "inbound" in front and "outbound" not in front
+
+
+# --- dedupe by Message-ID (4qn81m) -----------------------------------------
+#
+# The Graph id is useless as an "already on disk?" key: every mailbox holding
+# a copy gives it a different one, and a move changes it. The RFC 5322
+# Message-ID is the same everywhere, so that is what these key on.
+
+def test_second_export_into_the_same_folder_writes_nothing(tmp_path):
+    ctx, seen, _ = _ctx(attachments=[_attachment()])
+    first = tmp_path / "20260810_q1-figures.md"
+    mail.export_message(ctx, "m1", str(first), dedupe_dir=str(tmp_path))
+    seen.clear()
+    res = mail.export_message(ctx, "m1", str(tmp_path / "another-slug.md"),
+                              dedupe_dir=str(tmp_path))
+    assert res == {"already_exported": str(first),
+                   "internet_message_id": "<abc123@tenant-b.example>"}
+    assert sorted(p.name for p in tmp_path.iterdir()) == [first.name]
+    # decided on the one message GET: no attachment listing, no Sent Items
+    assert len(seen) == 1
+
+
+def test_a_copy_from_another_mailbox_is_recognised(tmp_path):
+    """The sender's Sent Items copy and a cc'd mailbox's copy have DIFFERENT
+    Graph ids. Only the Message-ID can say they are one message."""
+    ctx, _, _ = _ctx()
+    first = tmp_path / "from-sent-items.md"
+    mail.export_message(ctx, "m1", str(first))
+    other_copy = _message() | {"id": "AAMk-a-different-graph-id"}
+    ctx2, _, _ = _ctx(other_copy)
+    res = mail.export_message(ctx2, "AAMk-a-different-graph-id",
+                              str(tmp_path / "from-cc.md"),
+                              dedupe_dir=str(tmp_path))
+    assert res["already_exported"] == str(first)
+
+
+def test_an_eml_on_disk_is_found_by_its_header(tmp_path):
+    """No sidecar needed: the Message-ID is in the MIME. A folded header
+    must still parse, and the scan must stop at the blank line."""
+    (tmp_path / "evidence.eml").write_bytes(
+        b"From: other-user@tenant-b.example\r\nMessage-ID:\r\n"
+        b" <abc123@tenant-b.example>\r\nSubject: Q1\r\n\r\n"
+        b"Message-ID: <a-body-line-that-is-not-a-header@x>\r\n")
+    ctx, _, _ = _ctx()
+    res = mail.export_message(ctx, "m1", str(tmp_path / "q1.md"),
+                              dedupe_dir=str(tmp_path))
+    assert res["already_exported"] == str(tmp_path / "evidence.eml")
+
+
+def test_eml_export_fetches_only_the_key_before_deciding(tmp_path):
+    (tmp_path / "q1.md").write_text(
+        '---\ninternet_message_id: "<abc123@tenant-b.example>"\n---\n')
+    ctx, seen, _ = _ctx()
+    res = mail.export_message(ctx, "m1", str(tmp_path / "q1.eml"),
+                              dedupe_dir=str(tmp_path))
+    assert res["already_exported"] == str(tmp_path / "q1.md")
+    assert len(seen) == 1 and "$value" not in seen[0]
+    assert httpx.URL(seen[0]).params["$select"] == "internetMessageId"
+
+
+def test_hand_written_sidecars_match_without_brackets_or_double_quotes(tmp_path):
+    (tmp_path / "notes.txt").write_text(
+        "---\ntitle: Q1\ninternet_message_id: 'abc123@tenant-b.example'\n---\n")
+    ctx, _, _ = _ctx()
+    res = mail.export_message(ctx, "m1", str(tmp_path / "q1.md"),
+                              dedupe_dir=str(tmp_path))
+    assert res["already_exported"] == str(tmp_path / "notes.txt")
+
+
+def test_the_id_must_be_in_front_matter_not_just_anywhere(tmp_path):
+    """A record that merely QUOTES another message's id in its body (a
+    reply's notes, say) is not a copy of that message."""
+    (tmp_path / "reply.md").write_text(
+        '---\ninternet_message_id: "<reply@tenant-a.example>"\n---\n\n'
+        "internet_message_id: <abc123@tenant-b.example>\n")
+    (tmp_path / "no-front-matter.md").write_text(
+        "internet_message_id: <abc123@tenant-b.example>\n")
+    (tmp_path / "unrelated.pdf").write_bytes(b"%PDF <abc123@tenant-b.example>")
+    sub = tmp_path / "2025"
+    sub.mkdir()                                   # subfolders are not scanned
+    (sub / "old.md").write_text(
+        '---\ninternet_message_id: "<abc123@tenant-b.example>"\n---\n')
+    ctx, _, _ = _ctx()
+    dest = tmp_path / "q1.md"
+    res = mail.export_message(ctx, "m1", str(dest), dedupe_dir=str(tmp_path))
+    assert res["path"] == str(dest) and dest.exists()
+
+
+def test_rerunning_the_same_export_says_already_exported_not_overwrite(tmp_path):
+    ctx, _, _ = _ctx()
+    dest = tmp_path / "q1.md"
+    mail.export_message(ctx, "m1", str(dest), dedupe_dir=str(tmp_path))
+    res = mail.export_message(ctx, "m1", str(dest), dedupe_dir=str(tmp_path))
+    assert res["already_exported"] == str(dest)
+
+
+def test_force_writes_anyway(tmp_path):
+    ctx, _, _ = _ctx()
+    mail.export_message(ctx, "m1", str(tmp_path / "a.md"))
+    res = mail.export_message(ctx, "m1", str(tmp_path / "b.md"),
+                              dedupe_dir=str(tmp_path), force=True)
+    assert res["path"] == str(tmp_path / "b.md")
+    assert (tmp_path / "b.md").read_bytes() == (tmp_path / "a.md").read_bytes()
+
+
+def test_a_message_with_no_message_id_is_exported_unchecked(tmp_path):
+    (tmp_path / "other.md").write_text("---\ninternet_message_id: null\n---\n")
+    message = _message()
+    del message["internetMessageId"]
+    ctx, _, _ = _ctx(message)
+    res = mail.export_message(ctx, "m1", str(tmp_path / "q1.md"),
+                              dedupe_dir=str(tmp_path))
+    assert res["internet_message_id"] is None
+    assert (tmp_path / "q1.md").exists()
+
+
+def test_dedupe_dir_is_fenced_like_the_destination(tmp_path, monkeypatch):
+    ctx, _, _ = _ctx()
+    with pytest.raises(ValueError, match="not a directory"):
+        mail.export_message(ctx, "m1", str(tmp_path / "q1.md"),
+                            dedupe_dir=str(tmp_path / "missing"))
+    root = tmp_path / "root"
+    root.mkdir()
+    monkeypatch.setenv("CKM365_DOWNLOAD_ROOT", str(root))
+    with pytest.raises(ValueError, match="dedupe_dir is outside the download"):
+        mail.export_message(ctx, "m1", str(root / "q1.md"),
+                            dedupe_dir=str(tmp_path))
+    assert not (root / "q1.md").exists()

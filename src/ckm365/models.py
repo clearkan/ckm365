@@ -125,9 +125,14 @@ class MessageSummary:
     # in a mailbox shared by two. Measured cost: +141 bytes/row (+17%).
     # bcc is NOT here — it is populated only on the sender's own copy, so
     # it would be an empty column on nearly every row; get_message has it.
+    # internetMessageId rides along too (4qn81m): the RFC 5322 Message-ID
+    # is the one key that is the same in every mailbox holding a copy and
+    # survives a move (the Graph id does neither), so a caller can decide
+    # whether a message is already filed BEFORE fetching it. Measured cost
+    # on both tenants, 2026-10-26: +~105 bytes/row (+10-11%).
     SELECT: ClassVar[str] = ("id,subject,from,toRecipients,ccRecipients,"
                              "receivedDateTime,bodyPreview,isRead,isDraft,"
-                             "hasAttachments")
+                             "hasAttachments,internetMessageId")
     id: str
     subject: str | None = ""
     sender: Recipient | None = None
@@ -138,6 +143,7 @@ class MessageSummary:
     is_read: bool = False
     is_draft: bool = False
     has_attachments: bool = False
+    internet_message_id: str | None = None
 
     @classmethod
     def _kw(cls, d: dict[str, Any]) -> dict[str, Any]:
@@ -150,7 +156,8 @@ class MessageSummary:
             preview=d.get("bodyPreview", ""),
             is_read=bool(d.get("isRead")),
             is_draft=bool(d.get("isDraft")),
-            has_attachments=bool(d.get("hasAttachments")))
+            has_attachments=bool(d.get("hasAttachments")),
+            internet_message_id=d.get("internetMessageId"))
 
     @classmethod
     def from_graph(cls, d: dict[str, Any]):
@@ -160,11 +167,10 @@ class MessageSummary:
 @dataclass
 class Message(MessageSummary):
     SELECT: ClassVar[str] = (MessageSummary.SELECT +
-                             ",body,bccRecipients,internetMessageId,"
+                             ",body,bccRecipients,"
                              "internetMessageHeaders,webLink,parentFolderId")
     body: Body | None = None
     bcc: list[Recipient] = field(default_factory=list)
-    internet_message_id: str | None = None
     headers: MessageHeaders | None = None
     web_link: str | None = None
     # Which folder the message actually sits in. The only AUTHORITATIVE
@@ -178,7 +184,6 @@ class Message(MessageSummary):
         return super()._kw(d) | dict(
             body=Body.from_graph(d["body"]) if d.get("body") else None,
             bcc=_recipients(d.get("bccRecipients")),
-            internet_message_id=d.get("internetMessageId"),
             headers=MessageHeaders.from_graph(d)
                     if d.get("internetMessageHeaders") else None,
             web_link=d.get("webLink"),
