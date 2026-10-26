@@ -10,6 +10,7 @@ detail — import from this package, never from its submodules.
     read.py         listings, one message, curated headers, folders, counts
     attachments.py  list metadata, stream bytes out, put a file in, take one off
     export.py       one message to a file (OKF .md record, or raw .eml)
+    migrate.py      read-only plans for old correspondence folders
     drafts.py       reply/forward/update/revise/create/discard, and the one send
     verify.py       what a composed message actually says, before it goes
     triage.py       read state, flags, filing — batched metadata writes
@@ -38,6 +39,7 @@ from .drafts import (create_draft, create_forward_draft, create_persona_reply,
                      create_reply_draft, discard_draft, revise_draft,
                      send_draft, update_draft)
 from .export import export_message
+from .migrate import plan_correspondence_migration
 from .read import (get_message, get_message_headers, group_by_sender,
                    list_mail_folders, list_messages)
 from .triage import (complete_flag, flag, mark_read, mark_unread, move_message,
@@ -51,6 +53,7 @@ __all__ = [
     "export_message", "flag", "get_message", "get_message_headers",
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",
+    "plan_correspondence_migration",
     "remove_attachment", "revise_draft", "send_draft", "unflag",
     "update_draft", "verify_message",
 ]

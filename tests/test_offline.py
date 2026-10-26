@@ -251,9 +251,9 @@ def test_create_draft_posts_to_the_mailbox_message_collection():
 
 
 def test_tools_for_presets():
-    assert len(tools_for(["mail"])) == 13  # incl. list_accounts (ALWAYS)
-    assert len(tools_for(["mail"], write=True)) == 28
-    assert len(tools_for(["mail"], write=True, send=True)) == 29
+    assert len(tools_for(["mail"])) == 14  # incl. list_accounts (ALWAYS)
+    assert len(tools_for(["mail"], write=True)) == 29
+    assert len(tools_for(["mail"], write=True, send=True)) == 30
     # create_persona_reply is WRITE tier, not send: it imports a draft into
     # the persona's Drafts and nothing leaves the tenant (CKM-45).
     assert mail.create_persona_reply in tools_for(["mail"], write=True)

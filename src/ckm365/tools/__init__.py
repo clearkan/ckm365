@@ -17,7 +17,7 @@ READ = {
              mail.list_attachments, mail.download_attachment,
              mail.export_message, mail.group_by_sender, mail.verify_message,
              watch.list_new_messages, watch.wait_for_message,
-             watch.get_watch_command],
+             watch.get_watch_command, mail.plan_correspondence_migration],
     "calendar": [calendar.list_events, calendar.get_event],
     "teams": [teams.list_teams, teams.list_channels,
               teams.list_installed_apps],
