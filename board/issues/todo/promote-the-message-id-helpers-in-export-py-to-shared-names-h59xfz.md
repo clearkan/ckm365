@@ -8,7 +8,6 @@ priority: "medium"
 requested_by: "human:seanwy"
 assignees: ["codex"]
 tags: ["mail", "export", "copilot-card"]
-parent: "mr31re"
 ---
 
 A second module (the correspondence migration helper, mr31re) needs the
@@ -68,12 +67,16 @@ Nothing in `src/` or `tests/` outside export.py references the old names
 The offline suite, with no network (the sandbox has none; the uv cache
 already holds every wheel):
 
-    uv run --offline pytest tests/ -q > tmp/pytest.log 2>&1; echo EXIT=$?; tail -5 tmp/pytest.log
+    mkdir -p tmp; uv run --offline pytest tests/ -q > tmp/pytest.log 2>&1; echo EXIT=$?; tail -5 tmp/pytest.log
 
 Expected: `189 passed, 15 skipped`. It was `188 passed, 15 skipped`
 before this card. Report the counted result. If `uv run --offline` cannot
 create the worktree's `.venv` inside the sandbox, do not work around it:
 put the exact error in `not_run` and stop.
+
+## Relates to
+
+- mr31re (doing): the migration helper this unblocks.
 
 ## Not in scope
 
