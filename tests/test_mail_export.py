@@ -369,3 +369,19 @@ def test_dedupe_dir_is_fenced_like_the_destination(tmp_path, monkeypatch):
         mail.export_message(ctx, "m1", str(root / "q1.md"),
                             dedupe_dir=str(tmp_path))
     assert not (root / "q1.md").exists()
+
+
+# --- shared helpers (mr31re) ------------------------------------------------
+
+def test_message_id_helpers_are_shared_names(tmp_path):
+    """The migration helper imports these; the names are public inside
+    the package (AGENTS.md: shared helpers in tools/mail drop the
+    underscore)."""
+    from ckm365.tools.mail.export import eml_id, front_matter_id, id_key
+    assert id_key(" <a@b.example> ") == "a@b.example"
+    record = tmp_path / "r.md"
+    record.write_text('---\ninternet_message_id: "<a@b.example>"\n---\nbody\n')
+    assert front_matter_id(record) == "<a@b.example>"
+    raw = tmp_path / "r.eml"
+    raw.write_bytes(b"Message-ID: <a@b.example>\r\nSubject: x\r\n\r\nbody\r\n")
+    assert eml_id(raw) == "<a@b.example>"

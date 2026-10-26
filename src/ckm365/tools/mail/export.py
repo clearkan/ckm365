@@ -194,13 +194,13 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
 _MAX_FRONT_MATTER = 200   # lines; a front matter longer than this is not ours
 
 
-def _id_key(value: str | None) -> str:
+def id_key(value: str | None) -> str:
     """A Message-ID reduced to what two spellings of it share: hand-written
     sidecars drop the angle brackets that Graph and MIME both keep."""
     return (value or "").strip().strip("<>").strip()
 
 
-def _front_matter_id(path: Path) -> str | None:
+def front_matter_id(path: Path) -> str | None:
     """internet_message_id from a record's YAML front matter, or None."""
     with path.open(encoding="utf-8", errors="replace") as f:
         if f.readline().strip() != "---":
@@ -217,7 +217,7 @@ def _front_matter_id(path: Path) -> str | None:
     return None
 
 
-def _eml_id(path: Path) -> str | None:
+def eml_id(path: Path) -> str | None:
     """The Message-ID header of a raw .eml — read up to the first blank line
     only, so a large attachment is never pulled into memory."""
     head = []
@@ -232,17 +232,17 @@ def _eml_id(path: Path) -> str | None:
 def _already_exported(folder: Path, internet_message_id: str) -> Path | None:
     """The first file in folder (not its subfolders) recording this
     Message-ID, in name order so the answer is stable."""
-    want = _id_key(internet_message_id)
+    want = id_key(internet_message_id)
     for path in sorted(folder.iterdir()):
         suffix = path.suffix.lower()
         if not path.is_file() or suffix not in _EXPORT_TEXT | _EXPORT_RAW:
             continue
         try:
-            found = (_eml_id(path) if suffix in _EXPORT_RAW
-                     else _front_matter_id(path))
+            found = (eml_id(path) if suffix in _EXPORT_RAW
+                     else front_matter_id(path))
         except OSError:
             continue                  # unreadable: cannot be a match we know of
-        if found and _id_key(found) == want:
+        if found and id_key(found) == want:
             return path
     return None
 
