@@ -210,7 +210,7 @@ headless/app-only mode. Joining a tenant that already runs ckm365?
 | `docs/` | Usage modes, reference notes, design docs |
 | `board/` | Local ClearKan task board (see `.claude/skills/clearkan-lite/`) |
 | `scripts/` | Tenant setup (interactive) + live smoke tests |
-| `tmp/` | Git-ignored scratch, incl. the requirements doc |
+| `tmp/` | Git-ignored scratch (requirements are in `docs/requirements.md`) |
 
 ## License
 

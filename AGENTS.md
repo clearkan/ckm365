@@ -8,8 +8,9 @@ session; everything else worth knowing is one hop from here.
 
 1. `CLAUDE.md` — the hard rules (deps, tiers, draft-only mail, tenant ops
    are interactive, no secrets/bodies in logs). Non-negotiable.
-2. `tmp/m365-mcp-requirements.md` — the authoritative requirements. It is
-   git-ignored; if missing, ask the owner (seanwy) before proceeding.
+2. `docs/requirements.md` — the authoritative requirements, generic and
+   current. The owner's original brief, which names real tenants, stays
+   git-ignored in `tmp/`; you do not need it.
 3. `board/` — the task board, in Open Issue Format (https://oif.md) since
    CKM-50. The issue file for whatever you are asked to work on ("let's do
    CKM-18") contains the scope, the design sketch and dependencies — treat

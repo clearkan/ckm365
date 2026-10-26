@@ -3,8 +3,8 @@
 Minimal Python MCP server for Microsoft Graph mail + calendar. **Start every
 session with `AGENTS.md`** — it chains to everything else (requirements,
 board workflow, verification steps, gotchas). Full requirements live in
-`tmp/m365-mcp-requirements.md` (git-ignored working doc — read it at session
-start; ask seanwy if missing).
+`docs/requirements.md` — read it at session start. (The owner's original
+brief, with real identifiers, stays git-ignored in `tmp/`.)
 
 ## Hard rules
 

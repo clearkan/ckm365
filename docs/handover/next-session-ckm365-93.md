@@ -20,8 +20,8 @@ profile names come from `uv run ckm365 doctor` on the machine you are on.
 
 Check these before anything else; without them the live checks cannot run.
 
-- `tmp/m365-mcp-requirements.md`: the authoritative requirements, git-ignored.
-  Copy it across or ask seanwy.
+- Requirements now travel with git as `docs/requirements.md`. The
+  original brief in `tmp/` is the owner's private copy and is not needed.
 - `~/.config/ckm365/profiles.toml` (mode 600) and the per-profile MSAL token
   caches in ckm365's state dir (see `state_dir()` in `src/ckm365/auth.py`).
   Copy them, or run `uv run ckm365 login <profile>` per profile (device code,
@@ -112,9 +112,9 @@ version bump, CHANGELOG, commit, tag, push.
 - OIF comment ids use a Crockford-style alphabet: no `i`, `l`, `o`, `u`.
   `7b9hel.md` failed validation. Generate from
   `0123456789abcdefghjkmnpqrstvwxyz`.
-- `check-identifiers.py --rev-range` flags the `Claude-Session:
-  https://claude.ai/...` trailer. That is an accepted false positive; 30+
-  pushed commits carry it.
+- `check-identifiers.py --rev-range` flags the URL in each commit's
+  `Claude-Session:` attribution trailer. That is an accepted false positive;
+  30+ pushed commits carry it.
 - Board files written by other sessions sometimes lack quotes in front matter
   or carry real names. Re-read before committing them.
 - A newer uv bumps `uv.lock`'s `revision` on any version bump. Commit it
