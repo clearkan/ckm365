@@ -69,6 +69,53 @@ session; everything else worth knowing is one hop from here.
    release (`git tag -a vX.Y.Z -m "..."`), and push commit AND tags to
    `origin main` — downstream consumers (ClearKan) pin to these tags.
 
+## Codex as co-pilot (implementation cards)
+
+Since 2026-10-26 implementation work can be handed to Codex through
+omni's `copilot` card loop (`../omni/skills/copilot/SKILL.md`; it is not
+linked into the skills directory, read it by path). Claude leads: it
+designs, writes the tests, writes the card, reviews the diff and
+merges. Codex implements one card in a sandboxed worktree and never
+commits; the dispatcher commits and pushes `codex/<id>` on its behalf.
+
+- A card is an issue in `board/issues/todo/` with `copilot-card` in
+  `tags` and `codex` in `assignees`. Its body is the whole prompt: name
+  the files it may touch with line ranges, the exact gate command and
+  the counts expected before and after, and an explicit "not in scope".
+  Never `parent:` it to a feature (this board's kinds forbid it); use a
+  "Relates to" line. The spec is a test file committed to main that
+  `pytest.importorskip`s the module, so main stays green.
+- Run the dispatcher by hand (no timer on this box), one tick per call:
+
+      UV_CACHE_DIR=/tmp/uv-copilot-cache XDG_STATE_HOME=/tmp/copilot-xdg-state \
+      python3 ../omni/skills/copilot/scripts/copilot.py \
+        --board board --repo . --once --no-web [--dry-run]
+
+  `--no-web` always: the sandbox has no network, so Codex cannot reach
+  Graph or the profiles even if it tried, and no `CKM365_LIVE_*` test
+  ever runs under it. The two variables exist because the sandbox makes
+  the home directory READ-ONLY: uv cannot lock its cache there, and the
+  state dir is unwritable. Warm the cache once, online, in a throwaway
+  worktree (`UV_CACHE_DIR=/tmp/uv-copilot-cache uv sync`, ~43 MB); the
+  gate is then `uv run --offline pytest tests/ -q`. `tmp/` is
+  git-ignored, so a gate that logs there must `mkdir -p tmp` first.
+  `codex sandbox -c 'sandbox_mode="workspace-write"' -- bash -c '...'`
+  runs a command under the real sandbox with no model call: prove a gate
+  command that way before putting it on a card.
+- To ask for changes, add a comment whose body starts `review:`; the
+  next tick resumes the same thread (two rounds, then re-brief). Move
+  the card to `done` and the next tick removes the worktree.
+- THE IDENTIFIER CHECK GATES THE BOARD COMMIT. The dispatcher writes
+  Codex's report into a comment file verbatim, and a report that quotes
+  an error can carry an absolute path (it did, round 1 of h59xfz).
+  Chain `check-identifiers.py && git commit`, never `;`.
+- Keep in Claude: anything live (profiles, tokens, send tests,
+  signatures), releases (VERSION, CHANGELOG, tags), board moves, the
+  merge. Squash-merge the branch, then delete it on origin.
+- Codex using ckm365 as an MCP CLIENT is a separate, unstarted question
+  (5gkkbh): a global Codex MCP registration would hand live mailboxes to
+  these sandboxed dev runs, so it must be scoped before it exists.
+
 ## Absolute rules for this PUBLIC repo
 
 - NEVER commit real addresses, tenant names, tenant/client GUIDs, or
