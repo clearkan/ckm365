@@ -77,6 +77,11 @@ linked into the skills directory, read it by path). Claude leads: it
 designs, writes the tests, writes the card, reviews the diff and
 merges. Codex implements one card in a sandboxed worktree and never
 commits; the dispatcher commits and pushes `codex/<id>` on its behalf.
+Proven with codex-cli 0.162.x (a ChatGPT subscription login, `codex
+login` once per machine). The `omni` checkout owns the dispatcher; ask
+there, or read its SKILL.md, before changing how a tick runs. This
+section is the only record of the loop that travels with the repo: there
+is no agent-private memory to fall back on.
 
 - A card is an issue in `board/issues/todo/` with `copilot-card` in
   `tags` and `codex` in `assignees`. Its body is the whole prompt: name
