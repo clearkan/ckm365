@@ -121,8 +121,11 @@ def test_hand_written_without_an_id_and_no_eml_is_manual(tmp_path):
     assert "Message-ID" in item["reason"]
 
 
-def test_no_front_matter_is_manual(tmp_path):
+def test_no_front_matter_beside_a_same_stem_eml_is_manual(tmp_path):
+    # A note that owns the name a pair would write: a person has to look.
+    # (A note with NO same-stem mail file is a `note`: test_mail_migrate_notes.)
     (tmp_path / "loose.md").write_text("# Just a note\n\nno front matter\n")
+    (tmp_path / "loose.eml").write_bytes(eml(ID1))
     item = by_name(plan(tmp_path))["loose.md"]
     assert item["version"] == "none"
     assert item["action"] == "manual"

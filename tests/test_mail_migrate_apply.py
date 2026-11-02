@@ -252,13 +252,13 @@ def test_a_failure_on_one_file_does_not_stop_the_others_or_leave_residue(tmp_pat
 def test_duplicates_and_manual_items_are_reported_never_touched(tmp_path):
     (tmp_path / "a.md").write_text(v02(ID1))
     (tmp_path / "b.md").write_text(v02(ID1))              # flag-duplicate
-    (tmp_path / "loose.md").write_text("# no front matter\n")   # manual
+    (tmp_path / "nid.md").write_text(hand())                # manual: no id
     (tmp_path / "x.msg").write_bytes(b"\0" * 8)             # manual
     ctx, seen = _ctx()
     before = snapshot(tmp_path)
     r = by_name(migrate.migrate_correspondence(ctx, str(tmp_path), dry_run=False))
     assert r["b.md"]["action"] == "flag-duplicate" and r["b.md"]["outcome"] == "skipped"
-    assert r["loose.md"]["outcome"] == "skipped" and r["x.msg"]["outcome"] == "skipped"
+    assert r["nid.md"]["outcome"] == "skipped" and r["x.msg"]["outcome"] == "skipped"
     assert "a.md" not in r                                   # action none: not listed
     assert snapshot(tmp_path) == before
     assert not seen
