@@ -147,6 +147,9 @@ them.
   surface changes.
 - **v2.10.1**: `migrate_correspondence`'s `upgrade` no longer rewrites
   the body (6v3d56). Behaviour fix; no surface change.
+- **v2.11.0**: `plan_correspondence_migration` can return a new action,
+  `note` (58x5p7). A caller that switches on actions should treat an
+  unknown one as "leave alone". No signature changes.
 
 ---
 

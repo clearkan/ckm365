@@ -3,6 +3,7 @@
 import json
 import logging
 from collections import Counter
+from email import message_from_bytes
 from pathlib import Path
 
 from ... import __version__
@@ -69,11 +70,16 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
     - pair: create a record for a raw .eml that has no matching record.
     - flag-duplicate: another file of the same kind already has this id;
       review duplicate_of and git mv the spare copy yourself.
+    - note: not a mail record, nothing to migrate; see the per-file reason.
     - manual: inspect the per-file reason (missing id, unreadable file,
-      unrecognised record, or .msg requiring a parser dependency).
+      a bare record beside raw mail, or .msg without an identified sidecar).
 
-    Review this plan before acting. A later migrate_correspondence tool
-    will apply upgrade/pair; this planner applies nothing. Pairing uses
+    A record covering a thread carries its latest message's
+    internet_message_id at top level. IDs nested under other keys, such
+    as a messages list, are not read.
+
+    Review this plan before acting. migrate_correspondence applies
+    upgrade, pair and backfill-id; this planner applies nothing. Pairing uses
     Message-ID, with optional angle brackets, except same-stem backfill.
     Items and duplicate winners follow filename order. The result includes
     action counts, skipped suffix counts, and subfolder names for a later
@@ -88,7 +94,12 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
     subfolders = []
     raw_by_stem = {}
     backfills = []
-    for path in sorted(folder.iterdir()):
+    paths = sorted(folder.iterdir())
+    mail_by_stem = {}
+    for path in paths:
+        if path.is_file() and path.suffix.lower() in {".eml", ".msg"}:
+            mail_by_stem.setdefault(path.stem, path.name)
+    for path in paths:
         if path.is_dir():
             subfolders.append(path.name)
             continue
@@ -109,26 +120,43 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
                 item["reason"] = ".msg needs a parser and a new dependency"
             elif kind == "eml":
                 item["internet_message_id"] = eml_id(path)
-                if id_key(item["internet_message_id"]):
+                head = []
+                with path.open("rb") as f:
+                    for line in f:
+                        if not line.strip():
+                            break
+                        head.append(line)
+                headers = message_from_bytes(b"".join(head))
+                if any(value.strip() for value in headers.get_all("X-Unsent", [])):
+                    item.update(action="note", reason="X-Unsent marks an unsent draft")
+                elif id_key(item["internet_message_id"]):
                     item["action"] = "pair"
                     raw_by_stem.setdefault(path.stem, item)
                 else:
                     item["reason"] = "No Message-ID in the raw mail"
             else:
                 item["version"] = _record_version(path)
+                fields = _front_matter(path) or {}
+                # the same reader export dedupe uses, so both agree on the id
                 item["internet_message_id"] = front_matter_id(path)
                 if item["version"] == "okf-0.2":
                     item["action"] = "none"
                 elif item["version"] == "okf-0.1":
                     item["action"] = "upgrade"
                 elif item["version"] == "hand-written":
-                    if id_key(item["internet_message_id"]):
+                    if "type" in fields and fields["type"].lower() != "email":
+                        item.update(action="note", reason=f"Non-mail type: {fields['type']}")
+                    elif id_key(item["internet_message_id"]):
                         item["action"] = "none"
                     else:
                         item["reason"] = "No Message-ID or same-stem .eml with one"
                         backfills.append(item)
                 else:
-                    item["reason"] = "No front matter; inspect the record manually"
+                    mail = mail_by_stem.get(path.stem)
+                    if mail is not None:
+                        item["reason"] = f"No front matter; same-stem mail {mail} owns the name"
+                    else:
+                        item.update(action="note", reason="No front matter or same-stem mail")
         except OSError as exc:
             item.update(action="manual", reason=str(exc),
                         internet_message_id=None)
@@ -143,6 +171,8 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
 
     first = {}
     for item in items:
+        if item["action"] == "note":
+            continue
         key = id_key(item["internet_message_id"])
         if not key:
             continue
@@ -158,6 +188,20 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
         if kind != "eml":
             continue
         record = first.get(("record", key))
+        if record is not None:
+            item.update(action="none", pair=record["name"], reason=None)
+            if record["pair"] is None:
+                record["pair"] = item["name"]
+
+    records_by_stem = {}
+    for item in items:
+        if (item["kind"] == "record" and item["action"] != "note"
+                and id_key(item["internet_message_id"])):
+            records_by_stem.setdefault(Path(item["name"]).stem, item)
+    for item in items:
+        if item["kind"] != "msg":
+            continue
+        record = records_by_stem.get(Path(item["name"]).stem)
         if record is not None:
             item.update(action="none", pair=record["name"], reason=None)
             if record["pair"] is None:
@@ -251,7 +295,7 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
     results = []
     for item in plan["items"]:
         action = item["action"]
-        if action == "none":
+        if action in {"none", "note"}:
             continue
         result = dict(name=item["name"], action=action,
                       outcome="skipped", detail=item["reason"] or "")

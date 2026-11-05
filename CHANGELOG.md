@@ -3,6 +3,34 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.11.0] — 2026-11-06
+
+### Added
+- **`note`, a new planner action** (58x5p7): "not a mail record, nothing
+  to migrate", with the reason per file. It covers a record with no front
+  matter and no same-stem `.eml`/`.msg`, a hand-written front matter whose
+  `type` is not Email, and an `.eml` carrying `X-Unsent` (a draft never
+  sent has no Message-ID). Notes take no part in duplicate detection or
+  pairing, and `migrate_correspondence` leaves them out of its results.
+  Found by a full manual review of a real folder after 2.10.1: its 33
+  remaining `manual` items were all correct, and a rerun would have
+  reported them again forever.
+
+### Changed
+- A `.msg` whose same-stem record carries a Message-ID is now `none`,
+  paired to that record. It is still never opened.
+- A file with no front matter beside a same-stem mail file stays
+  `manual`, and its reason now names the mail file that owns the stem.
+- The planner's description documents the thread-record convention: a
+  record covering a thread carries its latest message's
+  `internet_message_id` at top level. Ids nested under other keys are not
+  read, by design: the planner has no YAML dependency.
+
+### Process
+- Implemented by Codex through the co-pilot card loop (q4m8vd) from a
+  test-first spec; one line changed at merge so the planner reads a
+  record's id with the same helper as export dedupe.
+
 ## [2.10.1] — 2026-10-26
 
 ### Fixed

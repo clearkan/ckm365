@@ -1,4 +1,4 @@
-# Next session — ckm365-93 — 2026-10-26 (updated after v2.10.1)
+# Next session — ckm365-93 — 2026-10-26 (updated after v2.11.0, 2026-11-06)
 
 You are resuming ckm365, the multi-tenant Microsoft Graph MCP server, on the
 correspondence-in-a-repo work. Read this first, then `AGENTS.md` (it chains
@@ -9,12 +9,13 @@ This file is committed to the PUBLIC repo on purpose, so it can travel with
 the clone. It therefore names no profiles, tenants, hosts or clients. Real
 profile names come from `uv run ckm365 doctor` on the machine you are on.
 
-## State — verified at the v2.10.1 release
+## State — verified at the v2.11.0 release
 
 - Repo: `main` at the commit carrying this file, pushed. Nothing
   uncommitted, nothing unpushed, no stashes, one worktree.
-- Released: **v2.10.1**, tagged and pushed.
-- Offline suite: 229 passed, 15 skipped. Live suite: 14/14 on both
+- Released: **v2.11.0**, tagged and pushed (58x5p7, the planner's `note`
+  action, via Codex card q4m8vd).
+- Offline suite: 251 passed, 15 skipped. Live suite: 14/14 on both
   delegated tenant profiles. live-smoke OK on both.
 
 ## New machine: what does NOT travel with git
@@ -74,8 +75,9 @@ in that order.
 3. **Bulk export** (`k4r9tw`, CKM-53), with the file-name token.
 4. **Recipient exclusion list** (`cw81fa`).
 5. Small follow-ups from the real-folder runs (in mr31re's last comment):
-   a `note` kind for front-matter-less files, a pair destination when
-   `<stem>.md` is taken, `nk2jc6` (correlate mail to work items).
+   a pair destination when `<stem>.md` is taken (needs a naming decision
+   from seanwy), `nk2jc6` (correlate mail to work items). The `note` kind
+   shipped in v2.11.0.
 
 Follow AGENTS.md "working loop" for each, and "Codex as co-pilot" when
 handing implementation to Codex.
@@ -99,6 +101,12 @@ handing implementation to Codex.
 
 ## Gotchas (new ones first)
 
+- Codex's ChatGPT login does not always survive a reboot or a CLI
+  upgrade. A tick that ends in 14 s with zero tokens and a "no valid
+  report" comment is a 401: check `codex login status`; seanwy runs
+  `codex login --device-auth`. Resume with a `review:` comment (uses one
+  of the two rounds). The warmed uv cache under /tmp also goes with a
+  reboot.
 - A record's body is a person's document once exported. No migration step
   may regenerate it; `upgrade` and `backfill-id` edit lines BEFORE the
   closing fence only (`_front_matter_lines` in migrate.py). The planner

@@ -128,12 +128,17 @@ widens the gap. `plan_correspondence_migration` reads ONE such folder
 `none`, `upgrade` (an OKF v0.1 record), `backfill-id` (a hand-written
 sidecar whose same-stem `.eml` carries the Message-ID), `pair` (a lone
 `.eml` with no record), `flag-duplicate` (same Message-ID, same kind —
-the spare copy is your `git mv`) or `manual` (with the reason per file;
-`.msg` stays unopened). `migrate_correspondence` applies `upgrade`, `pair`
-and `backfill-id`, locating messages by Message-ID across the record's
-own mailbox and yours; `dry_run=True` is the default and still does the
-lookups, so it can say `not-found`. It never deletes, never rewrites a
-hand-written body, and a second run changes nothing. Both sit in the read
+the spare copy is your `git mv`), `note` (not a mail record: a guide or
+meeting note with no mail beside it, front matter typed other than
+Email, an unsent draft `.eml`) or `manual` (with the reason per file).
+`.msg` stays unopened; it is current when its same-stem sidecar carries
+the Message-ID. A record covering a thread carries its latest message's
+`internet_message_id` at top level; nested ids are not read.
+`migrate_correspondence` applies `upgrade` and `backfill-id` locally,
+editing front matter only, and `pair`, locating the message by
+Message-ID in your mailbox; `dry_run=True` is the default and still does
+the lookups, so it can say `not-found`. It never deletes, never rewrites
+a body, and a second run changes nothing. Both sit in the read
 tier and are fenced by `CKM365_DOWNLOAD_ROOT` like `export_message`.
 
 Prefer `.md` for anything agents will search —
@@ -253,5 +258,6 @@ covering the send tier end to end; v2.6.0 closes the compose loop
 its live draft-cycle run is still outstanding; v2.9.0 adds `ckm365 audit`
 and Message-ID dedupe on `export_message`; v2.10.0 adds the
 correspondence migration planner and apply step; v2.10.1 makes its
-`upgrade` front-matter-only, so hand-written sections survive. Security + simplification
+`upgrade` front-matter-only, so hand-written sections survive; v2.11.0
+adds the planner's `note` action for files that are not mail. Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).
