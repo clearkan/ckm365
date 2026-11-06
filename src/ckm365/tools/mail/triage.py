@@ -276,7 +276,7 @@ def set_categories(ctx: Ctx, message_ids: list[str], *,
         except GraphError:
             master_warning = warning + "."
         else:
-            existing = {item["displayName"].lower()
+            existing = {(item.get("displayName") or "").lower()
                         for item in master.get("value", [])}
             refused: list[str] = []
             for name in additions:
