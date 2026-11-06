@@ -20,7 +20,36 @@ ID3 = "<three@tenant-a.example>"
 
 
 def v02(imid=ID1, title="Q1 figures"):
-    """What export_message writes today (OKF v0.2)."""
+    """What export_message writes today (OKF v0.2 with CKM-49's keys)."""
+    return ("---\n"
+            'type: "Message"\n'
+            'channel: "email"\n'
+            f'title: "{title}"\n'
+            'description: "Please see the attached"\n'
+            + (f'resource: "mid:{imid.strip("<>")}"\n' if imid
+               else 'resource: "https://outlook.example/x"\n')
+            + 'tags: ["email", "inbound"]\n'
+            'generated: {by: "ckm365/2.12.0", at: "2026-10-01T01:02:03Z"}\n'
+            'from: "Alex <other-user@tenant-b.example>"\n'
+            'to: "operator@tenant-a.example"\n'
+            'cc: ""\n'
+            'mailbox: "operator@tenant-a.example"\n'
+            'message_id: "AAMkAG1"\n'
+            + (f'internet_message_id: "{imid}"\n' if imid else "")
+            + 'conversation_id: "AAQkAGconv"\n'
+            'in_reply_to: ""\n'
+            "references: []\n"
+            'web_link: "https://outlook.example/x"\n'
+            'body_scope: "unique"\n'
+            "has_attachments: false\n"
+            "is_bulk: false\n"
+            "is_auto_reply: false\n"
+            "---\n\n# Q1 figures\n\nPlease see the attached.\n")
+
+
+def v02_email(imid=ID1, title="Q1 figures"):
+    """What v2.8.0-v2.11.x wrote (OKF v0.2, before CKM-49): type Email,
+    resource is the per-mailbox webLink, no thread keys, the full body."""
     return ("---\n"
             'type: "Email"\n'
             f'title: "{title}"\n'
@@ -35,6 +64,8 @@ def v02(imid=ID1, title="Q1 figures"):
             'message_id: "AAMkAG1"\n'
             + (f'internet_message_id: "{imid}"\n' if imid else "")
             + "has_attachments: false\n"
+            "is_bulk: false\n"
+            "is_auto_reply: false\n"
             "---\n\n# Q1 figures\n\nPlease see the attached.\n")
 
 

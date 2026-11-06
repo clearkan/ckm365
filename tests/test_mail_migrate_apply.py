@@ -119,11 +119,12 @@ def test_dry_run_looks_up_but_writes_nothing(tmp_path):
     assert r["evidence.eml"]["outcome"] == "would-apply"
     assert r["notes.md"]["outcome"] == "would-apply"
     assert snapshot(tmp_path) == before
-    # the pair lookup happened (so a dry run can say "not found"), nothing
-    # else: upgrade and backfill-id are local rewrites
+    # the pair lookup happened (so a dry run can say "not found") and
+    # nothing was written; since CKM-49 the upgrade looks up thread
+    # metadata too (test_mail_migrate_threading), backfill-id stays local
     assert all(req.method == "GET" for req in seen)
     filters = [req.url.params.get("$filter", "") for req in seen]
-    assert any(ID2 in f for f in filters) and not any(ID1 in f for f in filters)
+    assert any(ID2 in f for f in filters) and not any(ID3 in f for f in filters)
 
 
 def test_dry_run_reports_a_message_graph_cannot_find(tmp_path):
@@ -149,7 +150,9 @@ def test_upgrade_rewrites_only_the_front_matter_of_a_v01_record(tmp_path):
     assert 'mailbox: "operator@tenant-a.example"' in head  # other keys survive
     assert "timestamp:" not in head and "exported_by:" not in head
     assert body == v01(ID1).partition("\n---\n")[2]       # body byte for byte
-    assert not seen                                      # no Graph call
+    # never a body read (CKM-49 looks up thread metadata only)
+    assert not any("body" in req.url.params.get("$select", "").split(",")
+                   for req in seen)
     assert sorted(p.name for p in tmp_path.iterdir()) == ["old.md"]  # no .part
 
 

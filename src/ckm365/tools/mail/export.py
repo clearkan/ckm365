@@ -7,6 +7,7 @@ Open Knowledge Format v0.2 document — see export_message.
 import logging
 from email import message_from_bytes
 from pathlib import Path
+from urllib.parse import quote
 
 from ... import __version__
 from ...graph import Graph, GraphError, mailbox_path
@@ -110,8 +111,15 @@ def _tags(message: Message, mailbox: str, sent_folder: str | None) -> list[str]:
         ("auto-reply", bool(headers and headers.is_auto_reply))) if on]
 
 
+def mid_uri(internet_message_id: str | None) -> str | None:
+    """The mailbox-independent RFC 2392 URI for a message's Message-ID."""
+    value = (internet_message_id or "").strip().strip("<>").strip()
+    return "mid:" + quote(value, safe="@!$&'()*+,;=:~._-") if value else None
+
+
 def _record(message: Message, attachments: list[Attachment], mailbox: str,
-            version: str, sent_folder: str | None = None) -> str:
+            version: str, sent_folder: str | None = None, *,
+            full_body: bool = False) -> str:
     """Render the greppable record: front matter, body, attachment manifest.
 
     The front matter is Open Knowledge Format v0.2 (openknowledgeformat.com):
@@ -124,6 +132,9 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
 
     WHAT v0.2 CHANGED FOR US, and what it deliberately did not:
 
+    - `type` is `Message`, with `channel: email` for the medium. `resource`
+      is the mailbox-independent `mid:` URI, falling back to `web_link`
+      when there is no Message-ID; `web_link` keeps the per-mailbox link.
     - `timestamp` is gone, replaced by `generated: {by, at}` (v0.2's one
       breaking change that touches this document). `by` follows OKF's actor
       convention, `<producer>/<version>`, which absorbs what used to be the
@@ -149,12 +160,16 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
       bundle we do not own.
     """
     headers = message.headers
+    unique = not full_body and bool(message.unique_body
+                                   and message.unique_body.content.strip())
+    body = message.unique_body if unique else message.body
     front = {
         # OKF v0.2 core
-        "type": "Email",
+        "type": "Message",
+        "channel": "email",
         "title": message.subject or "(no subject)",
         "description": _yaml_description(message),
-        "resource": message.web_link,
+        "resource": mid_uri(message.internet_message_id) or message.web_link,
         "tags": _tags(message, mailbox, sent_folder),
         "generated": {"by": f"ckm365/{version}", "at": message.received},
         # extension keys: the mail specifics OKF has no opinion about
@@ -164,6 +179,11 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
         "mailbox": mailbox,
         "message_id": message.id,
         "internet_message_id": message.internet_message_id,
+        "conversation_id": message.conversation_id or "",
+        "in_reply_to": (headers.in_reply_to or "") if headers else "",
+        "references": headers.references if headers else [],
+        "web_link": message.web_link,
+        "body_scope": "unique" if unique else "full",
         "has_attachments": message.has_attachments,
         "is_bulk": bool(headers and headers.is_bulk),
         "is_auto_reply": bool(headers and headers.is_auto_reply),
@@ -171,7 +191,7 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
     lines = ["---"]
     lines += [f"{k}: {_yaml_value(v)}" for k, v in front.items()]
     lines += ["---", "", f"# {message.subject or '(no subject)'}", "",
-              (message.body.content if message.body else "").strip(), ""]
+              (body.content if body else "").strip(), ""]
     if attachments:
         lines += ["## Attachments", ""]
         lines += [f"- {a.name or '(unnamed)'} — {a.size} B, {a.kind or 'unknown'}"
@@ -247,19 +267,22 @@ def _already_exported(folder: Path, internet_message_id: str) -> Path | None:
     return None
 
 
-def record_bytes(g: Graph, mailbox: str, message_id: str) -> tuple[bytes, Message, int]:
+def record_bytes(g: Graph, mailbox: str, message_id: str, *,
+                 full_body: bool = False) -> tuple[bytes, Message, int]:
     """Fetch and render the same OKF record for export and migration."""
     message = Message.from_graph(
         g.get(message_path(mailbox, message_id),
-              params={"$select": Message.SELECT}, headers=prefer("text")))
+              params={"$select": Message.SELECT + ("" if full_body else ",uniqueBody")},
+              headers=prefer("text")))
     items = attachments_of(g, mailbox, message_id) if message.has_attachments else []
     record = _record(message, items, mailbox, __version__,
-                     _sent_folder_id(g, mailbox)).encode("utf-8")
+                     _sent_folder_id(g, mailbox), full_body=full_body).encode("utf-8")
     return record, message, len(items)
 
 
 def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
                    dedupe_dir: str | None = None, force: bool = False,
+                   full_body: bool = False,
                    account: str | None = None,
                    mailbox: str | None = None) -> dict:
     """Write one message to a file — the way to keep correspondence in a repo.
@@ -278,13 +301,19 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
       on (email, inbound/outbound, attachments, bulk, auto-reply).
       Deterministic, so re-exporting the same message produces the same
       file and git shows no diff.
+      By default the body is uniqueBody, Graph's own new-text-only
+      rendering, with body_scope `unique`. If it is empty, or you pass
+      full_body=true, the full body is used and body_scope is `full`.
+      `resource` is the mailbox-independent `mid:` URI (or the web link
+      when there is no Message-ID); `web_link` is the per-mailbox link.
       Direction comes from WHICH FOLDER the message is in, falling back to
       `sender == mailbox` outside Sent Items. The folder has to win because
       Send-As breaks the sender test (CKM-45): a message sent as a shared
       mailbox lands in the HUMAN's Sent Items with the shared mailbox as
       sender, and used to come out tagged `inbound`.
     - `.eml` — the raw MIME exactly as Graph serves it: full fidelity
-      (every header, HTML part and attachment bytes inline), the right
+      (every header, HTML part and attachment bytes inline), the complete
+      chain regardless of full_body, and the right
       choice for an evidence archive. NOT reliably greppable: Exchange
       base64-encodes body parts, so a word in the message may appear
       nowhere in the file. Do not use it as the searchable copy.
@@ -360,7 +389,7 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
             dest, lambda part: g.download(message_path(mb, message_id,
                                                        "/$value"), part))
     else:
-        record, message, count = record_bytes(g, mb, message_id)
+        record, message, count = record_bytes(g, mb, message_id, full_body=full_body)
         imid = message.internet_message_id
         written = write_atomic(dest, lambda part: part.write_bytes(record))
     log.info("tool=export_message mailbox=%r message_id=%r format=%s bytes=%d",

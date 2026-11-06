@@ -13,6 +13,7 @@ front doors lose nothing while programmatic consumers gain a
 pydantic-free core. An offline test pins that contract.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -50,6 +51,7 @@ _CURATED_HEADERS = {  # lower-case wire name -> field (CKM-38: a NAMED subset)
     "auto-submitted": "auto_submitted",
     "x-auto-response-suppress": "auto_response_suppress",
     "return-path": "return_path",
+    "in-reply-to": "in_reply_to",
 }
 _MAX_HEADER_VALUE = 200  # live sample: only List-Unsubscribe exceeds it
 _BULK_PRECEDENCE = {"bulk", "list", "junk"}
@@ -95,18 +97,30 @@ class MessageHeaders:
     return_path: str | None = None
     is_bulk: bool = False
     is_auto_reply: bool = False
+    in_reply_to: str | None = None
+    references: list[str] = field(default_factory=list)
 
     @classmethod
     def from_graph(cls, d: dict[str, Any]) -> "MessageHeaders":
         found: dict[str, str] = {}
+        references: list[str] | None = None
         for header in d.get("internetMessageHeaders") or []:
-            name = _CURATED_HEADERS.get((header.get("name") or "").strip().lower())
+            wire_name = (header.get("name") or "").strip().lower()
+            if wire_name == "references" and references is None:
+                # A long thread legitimately exceeds the 200-character cap:
+                # measured live, 23 ids occupied 1,850 characters.
+                value = "".join(c for c in str(header.get("value") or "")
+                                if 32 <= ord(c) != 127)
+                references = [token for token in re.findall(r"<[^<>\s]*>", value)
+                              if len(token) <= 250][-100:]
+            name = _CURATED_HEADERS.get(wire_name)
             if name and name not in found:  # duplicates: first occurrence wins
                 found[name] = _header_value(header.get("value"))
         submitted = (found.get("auto_submitted") or "").split(";")[0].strip().lower()
         precedence = (found.get("precedence") or "").split(";")[0].strip().lower()
         return cls(
             **found,
+            references=references or [],
             # List-Unsubscribe/List-Id are what bulk senders are obliged to
             # set, and beat any amount of subject matching.
             is_bulk=bool(found.get("list_unsubscribe") or found.get("list_id")
@@ -176,7 +190,8 @@ class SearchResult:
 class Message(MessageSummary):
     SELECT: ClassVar[str] = (MessageSummary.SELECT +
                              ",body,bccRecipients,"
-                             "internetMessageHeaders,webLink,parentFolderId")
+                             "internetMessageHeaders,webLink,parentFolderId,"
+                             "conversationId,conversationIndex")
     body: Body | None = None
     bcc: list[Recipient] = field(default_factory=list)
     headers: MessageHeaders | None = None
@@ -186,6 +201,9 @@ class Message(MessageSummary):
     # human's Sent Items with the SHARED mailbox as sender, so comparing
     # sender to mailbox calls it inbound (CKM-45).
     parent_folder_id: str | None = None
+    conversation_id: str | None = None
+    conversation_index: str | None = None
+    unique_body: Body | None = None
 
     @classmethod
     def _kw(cls, d: dict[str, Any]) -> dict[str, Any]:
@@ -195,7 +213,11 @@ class Message(MessageSummary):
             headers=MessageHeaders.from_graph(d)
                     if d.get("internetMessageHeaders") else None,
             web_link=d.get("webLink"),
-            parent_folder_id=d.get("parentFolderId"))
+            parent_folder_id=d.get("parentFolderId"),
+            conversation_id=d.get("conversationId"),
+            conversation_index=d.get("conversationIndex"),
+            unique_body=Body.from_graph(d["uniqueBody"])
+                        if d.get("uniqueBody") is not None else None)
 
 
 @dataclass

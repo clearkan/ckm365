@@ -166,7 +166,8 @@ def test_export_message_both_formats(ctx):
             assert "<p>" not in text                 # Graph converted the HTML
             assert res["format"] == "md" and res["attachments"] == 0
             # OKF v0.2 front matter, from REAL Graph fields
-            assert 'type: "Email"' in text
+            assert 'type: "Message"' in text and 'channel: "email"' in text
+            assert "body_scope: " in text and "conversation_id: " in text  # CKM-49
             assert 'title: "ckm365 live export"' in text
             assert f'description: "{token}' in text  # Graph's own preview
             assert "generated: {by: " in text and "resource: " in text

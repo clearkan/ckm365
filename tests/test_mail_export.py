@@ -92,10 +92,11 @@ def test_markdown_record_is_greppable_and_complete(tmp_path):
     for line in (
             # OKF v0.1 core (openknowledgeformat.com): the record IS an OKF
             # document, so it drops into an okf/ repo unmodified
-            'type: "Email"',
+            'type: "Message"',
             'title: "Q1 figures"',
             f'description: "{BODY[:40]}"',   # OKF's one-liner: Graph's preview
-            'resource: "https://outlook.office365.com/mail/deeplink/m1"',
+            'resource: "mid:abc123@tenant-b.example"',
+            'web_link: "https://outlook.office365.com/mail/deeplink/m1"',
             # facets an okf/ repo can filter on, all derived
             'tags: ["email", "inbound", "attachments", "bulk"]',
             # OKF v0.2 provenance: the actor convention <producer>/<version>,

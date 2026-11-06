@@ -35,12 +35,33 @@ All notable changes to ckm365 are documented here. Format follows
   dependencies stay httpx and msal.
 
 ### Changed
+- **Exported records know their thread and store each message's new text
+  once** (CKM-49, tvtrb0). Measured live first: replies carry
+  In-Reply-To and References (up to 23 ids, 1,850 characters), and
+  Graph's `uniqueBody` was 14 characters against 54,859 for the full
+  chain on one long thread.
+  - The body is `uniqueBody` by default, with `body_scope: "unique"`;
+    `export_message(full_body=True)`, or an empty uniqueBody, gives the
+    full chain and `body_scope: "full"`. The `.eml` is still the whole
+    chain.
+  - New front-matter keys: `channel: "email"`, `conversation_id`,
+    `in_reply_to`, `references`, `web_link`, `body_scope`.
+  - `type` is `"Message"` (was `"Email"`), so chat records can share the
+    shape; `resource` is the RFC 2392 `mid:` URI of the Message-ID (was
+    the per-mailbox webLink, which moves to `web_link`).
+  - `Message` gains `conversation_id`, `conversation_index` and
+    `unique_body` (the last fetched by export only); `MessageHeaders`
+    gains `in_reply_to` and `references`, the latter tokenised by id
+    rather than capped at 200 characters.
+  Records already on disk are brought up to date by the migration
+  helper (the next step of tvtrb0).
 - `Draft` is now a subclass of `Message` (it was an alias) carrying
   `recipient_warnings`. `isinstance(d, Message)` still holds.
 - `list_messages`' description says its `search` stops at 275 silently
   and points to `search_messages`.
 
 ### Process
+- Codex card e8r5wc for the CKM-49 record, merged as delivered.
 - Codex card v6n4tj for the exclusion list; at merge the error message
   gained its reason and the send log kept its mailbox and message id.
 - Codex card z2k7hm; two changes at merge (`hit_max_results` only when
