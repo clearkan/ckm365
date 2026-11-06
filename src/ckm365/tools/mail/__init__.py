@@ -47,7 +47,7 @@ from .migrate import migrate_correspondence, plan_correspondence_migration
 from .read import (get_message, get_message_headers, group_by_sender,
                    list_mail_folders, list_messages, search_messages)
 from .triage import (complete_flag, flag, mark_read, mark_unread, move_message,
-                     unflag)
+                     set_categories, unflag)
 from .verify import verify_message
 
 __all__ = [
@@ -58,6 +58,7 @@ __all__ = [
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",
     "migrate_correspondence", "plan_correspondence_migration",
-    "remove_attachment", "revise_draft", "search_messages", "send_draft", "unflag",
+    "remove_attachment", "revise_draft", "search_messages", "send_draft",
+    "set_categories", "unflag",
     "update_draft", "verify_message",
 ]

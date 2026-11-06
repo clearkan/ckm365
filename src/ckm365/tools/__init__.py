@@ -36,7 +36,7 @@ WRITE = {
              # triage: metadata only — read state, flags, filing. Nothing
              # leaves the tenant, so these are write tier, not send tier.
              mail.mark_read, mail.mark_unread, mail.flag, mail.unflag,
-             mail.complete_flag, mail.move_message],
+             mail.complete_flag, mail.set_categories, mail.move_message],
     "calendar": [calendar.create_event, calendar.update_event,
                  calendar.respond_event],
     "teams": [],
