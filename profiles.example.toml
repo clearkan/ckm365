@@ -30,6 +30,13 @@ description = "Tenant A work tenant (shared mailbox: ops@)"  # shown to agents
 #<p style="margin:0"><b>Ops</b> — Example Pte Ltd</p>
 #<p style="margin:0"><a href="https://example.com">example.com</a></p>
 #'''
+# Optional: the font your text gets in drafts. Outlook does not pass a
+# wrapper's style down to paragraphs, so bare <p> renders in Times above
+# a quoted history in the mailbox font. Set this to the mailbox's own
+# font and each composed paragraph is styled to match. Unset means
+# bodies go out exactly as given. The signature is never restyled.
+#compose_font = "Calibri,sans-serif"   # newer tenants: "Aptos,sans-serif"
+#compose_size = "11pt"                 # Aptos default is 12pt
 
 [profiles.tenant-b]
 tenant_id = "00000000-0000-0000-0000-000000000000"
