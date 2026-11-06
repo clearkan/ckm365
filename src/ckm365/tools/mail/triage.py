@@ -15,7 +15,7 @@ from ...graph import (Graph, GraphError, encode_segment as _seg,
                       mailbox_path as _path)
 from ...models import MailFolder
 from ..context import Ctx, pull
-from .common import apply_each, batch_ids, outcome
+from .common import apply_each, batch_error, batch_ids, message_path, outcome
 
 log = logging.getLogger("ckm365")
 
@@ -175,6 +175,125 @@ def complete_flag(ctx: Ctx, message_ids: list[str], *,
     ok, failed = apply_each(g, mb, ids, "PATCH", body={"flag": {
         "flagStatus": "complete", "completedDateTime": _now_utc()}})
     return outcome("complete_flag", mb, ok, failed)
+
+
+def set_categories(ctx: Ctx, message_ids: list[str], *,
+                   add: list[str] | None = None,
+                   remove: list[str] | None = None,
+                   account: str | None = None,
+                   mailbox: str | None = None) -> dict:
+    """Add or remove Outlook categories on messages. Pass a LIST even for
+    one id. Categories are message METADATA, like flags, never content;
+    this is write tier and sends nothing.
+
+    Select messages first, then pass up to 200 ids. Names are stripped,
+    must be 1-255 characters, and match case-insensitively. Duplicates
+    keep the first spelling; a name cannot be both added and removed.
+    Existing names keep their spelling and order; new names go on the end.
+
+    Graph replaces the whole category list, so this reads, merges, then
+    PATCHes only changed messages, 20 at a time via /$batch. Last write
+    wins: an Outlook edit between the read and write can be overwritten.
+
+    Added names missing from the mailbox's master categories are created
+    with a default colour. This needs MailboxSettings.ReadWrite, which
+    ckm365 does not request; refusal returns master_warning, while the
+    message labels remain applied without a colour.
+
+    Returns {"ok": changed count, "unchanged": count, "failed":
+    [{"id", "error"}], "categories": {id: merged names}, "master_created":
+    [names], "master_warning": text or null}. Categories includes changed
+    and unchanged successes only. Failures are per message.
+    """
+    ctx.require_write()
+    ids = batch_ids(message_ids)
+
+    def names(values: list[str] | None, argument: str) -> list[str]:
+        if values is None:
+            return []
+        if not isinstance(values, list):
+            raise ValueError(f"{argument} must be a LIST of category names")
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str) or not 1 <= len(value.strip()) <= 255:
+                raise ValueError(
+                    f"{argument} names must be strings of 1-255 characters")
+            name = value.strip()
+            if name.lower() not in seen:
+                result.append(name)
+                seen.add(name.lower())
+        return result
+
+    additions = names(add, "add")
+    removals = {name.lower() for name in names(remove, "remove")}
+    if not additions and not removals:
+        raise ValueError("at least one category name is required")
+    if any(name.lower() in removals for name in additions):
+        raise ValueError("a category cannot be both added and removed")
+
+    g, mb = ctx.target(account, mailbox)
+    read, failed = apply_each(g, mb, ids, "GET", "?$select=categories")
+    categories: dict[str, list[str]] = {}
+    pending: list[tuple[str, list[str]]] = []
+    unchanged = 0
+    for message_id, body in read:
+        current = body.get("categories") or []
+        merged = [name for name in current if name.lower() not in removals]
+        present = {name.lower() for name in merged}
+        for name in additions:
+            if name.lower() not in present:
+                merged.append(name)
+                present.add(name.lower())
+        if merged == current:
+            unchanged += 1
+            categories[message_id] = merged
+        else:
+            pending.append((message_id, merged))
+
+    ok: list[tuple[str, dict]] = []
+    if pending:
+        results = g.batch([
+            {"method": "PATCH", "url": message_path(mb, message_id),
+             "body": {"categories": merged}}
+            for message_id, merged in pending])
+        for (message_id, merged), result in zip(pending, results):
+            if 200 <= result["status"] < 300:
+                ok.append((message_id, result["body"] or {}))
+                categories[message_id] = merged
+            else:
+                failed.append({"id": message_id, "error": batch_error(result)})
+
+    master_created: list[str] = []
+    master_warning: str | None = None
+    if additions and (ok or unchanged):
+        path = _path(mb, "outlook/masterCategories")
+        warning = ("Master categories need MailboxSettings.ReadWrite, which "
+                   "ckm365 does not request; labels were applied without "
+                   "a colour")
+        try:
+            master = g.get(path, params={"$select": "displayName"})
+        except GraphError:
+            master_warning = warning + "."
+        else:
+            existing = {item["displayName"].lower()
+                        for item in master.get("value", [])}
+            refused: list[str] = []
+            for name in additions:
+                if name.lower() in existing:
+                    continue
+                try:
+                    g.post(path, json={"displayName": name, "color": "preset7"})
+                except GraphError:
+                    refused.append(name)
+                else:
+                    master_created.append(name)
+            if refused:
+                master_warning = warning + " for: " + ", ".join(refused) + "."
+
+    return outcome("set_categories", mb, ok, failed, unchanged=unchanged,
+                   categories=categories, master_created=master_created,
+                   master_warning=master_warning)
 
 
 def _resolve_destination(g: Graph, mb: str, destination: str) -> str:
