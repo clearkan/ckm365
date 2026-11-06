@@ -3,7 +3,7 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
-## [Unreleased]
+## [2.12.0] — 2026-11-07
 
 ### Added
 - **`search_messages`** (xfccc0), a read-tier tool for searches that can
@@ -33,6 +33,13 @@ All notable changes to ckm365 are documented here. Format follows
   per-call file). A configured list that is missing or invalid is an
   error before any Graph call. TOML rather than the proposed YAML: core
   dependencies stay httpx and msal.
+
+- **`export_messages`**, bulk export (k4r9tw, CKM-53): a thread, a
+  folder or a list of ids into a correspondence folder, oldest first,
+  named `YYYYMMDD_<slug>_<token>.md` (token: SHA-1 of the Message-ID),
+  idempotent through Message-ID dedupe, with optional `.eml`,
+  attachments and a dry run. Read tier. Live: one real thread, 4 written,
+  a rerun 4 already.
 
 ### Changed
 - **Exported records know their thread and store each message's new text
@@ -72,6 +79,11 @@ All notable changes to ckm365 are documented here. Format follows
   and points to `search_messages`.
 
 ### Process
+- Codex card h7t3qf for bulk export; at merge: 100 rows per page, no
+  second `.eml` for a message already filed under another name, and
+  the docstring says how a truncated folder listing is cut.
+- Live suite: three new tests (search past the cap, recursive folders,
+  check_recipients); 17/17 on both delegated tenants.
 - Codex card e8r5wc for the CKM-49 record, merged as delivered; card
   w3c9pg for the upgrade, which stopped on two spec assertions that were
   wrong (an encoded URL); at merge the metadata GET went through

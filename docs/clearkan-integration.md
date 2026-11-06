@@ -150,6 +150,19 @@ them.
 - **v2.11.0**: `plan_correspondence_migration` can return a new action,
   `note` (58x5p7). A caller that switches on actions should treat an
   unknown one as "leave alone". No signature changes.
+- **v2.12.0**: new read tools `search_messages`, `export_messages`,
+  `check_recipients`; `list_mail_folders` gains `parent`/`recursive` and
+  `MailFolder` gains `parent_id`/`path`; `export_message` gains
+  `full_body`; `send_draft` gains `override_exclusions` and REFUSES
+  excluded recipients when the profile names an `exclusions_file`; draft
+  tools return `recipient_warnings` (`Draft` is now a `Message`
+  subclass). Additive on the pinned surface, with one behaviour change
+  worth a look: **the `.md` record's shape changed** (CKM-49): `type`
+  is `Message` (was `Email`) with `channel: email`, `resource` is a
+  `mid:` URI (the webLink moved to `web_link`), and the body is the new
+  text only by default. A consumer that matched `type: Email` or read
+  `resource` as a URL needs updating; `migrate_correspondence` upgrades
+  old records in place, front matter only.
 
 ---
 

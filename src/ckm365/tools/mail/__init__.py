@@ -10,6 +10,7 @@ detail — import from this package, never from its submodules.
     read.py         listings, search_messages, one message, curated headers, folders, counts
     attachments.py  list metadata, stream bytes out, put a file in, take one off
     export.py       one message to a file (OKF .md record, or raw .eml)
+    bulk.py         a thread, folder or id list to a correspondence folder
     migrate.py      plan and apply old-folder migrations; never rewrites a body
     drafts.py       reply/forward/update/revise/create/discard, and the one send
     exclusions.py   local recipient checks, draft warnings, send guard
@@ -36,6 +37,7 @@ of them takes a LIST of ids, reports per-id outcomes, and never lets one
 
 from .attachments import (add_attachment, download_attachment,
                           list_attachments, remove_attachment)
+from .bulk import export_messages
 from .drafts import (create_draft, create_forward_draft, create_persona_reply,
                      create_reply_draft, discard_draft, revise_draft,
                      send_draft, update_draft)
@@ -52,7 +54,7 @@ __all__ = [
     "add_attachment", "check_recipients", "complete_flag", "create_draft", "create_forward_draft",
     "create_persona_reply", "create_reply_draft", "discard_draft",
     "download_attachment",
-    "export_message", "flag", "get_message", "get_message_headers",
+    "export_message", "export_messages", "flag", "get_message", "get_message_headers",
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",
     "migrate_correspondence", "plan_correspondence_migration",

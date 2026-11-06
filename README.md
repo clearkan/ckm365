@@ -107,9 +107,15 @@ format: **`.md`** for a greppable record or **`.eml`** for byte-exact MIME.
 The `.md` record is an **[Open Knowledge Format](https://openknowledgeformat.com/)
 v0.2 document** — YAML front matter with OKF's
 `type`/`title`/`description`/`resource`/`tags`/`generated`, mail-specific
-extension keys beneath it (from, to, cc, mailbox, message ids, bulk and
-auto-reply flags), the body as plain text, then an attachment manifest
-carrying the ids `download_attachment` needs. It drops into an `okf/` repo
+extension keys beneath it (from, to, cc, mailbox, message ids, the thread
+keys `conversation_id`/`in_reply_to`/`references`, `web_link`,
+`body_scope`, bulk and auto-reply flags), the body as plain text, then an
+attachment manifest carrying the ids `download_attachment` needs.
+`type` is `Message` with `channel: email`, and `resource` is the RFC 2392
+`mid:` URI of the Message-ID, so a record in one repo can cite a message
+held in another. The body is Graph's `uniqueBody` (the new text alone)
+unless you pass `full_body=True`; `body_scope` says which. The `.eml` is
+always the complete chain. It drops into an `okf/` repo
 unmodified, and `tags` carries the facets worth filtering on (`email`,
 `inbound`/`outbound`, `attachments`, `bulk`, `auto-reply`). Re-exporting a
 message is byte-identical, so git shows no diff.
@@ -121,6 +127,17 @@ neither. A hit writes nothing and returns `already_exported` with the
 existing file's path, whether that file is a `.md` record or an `.eml`.
 `list_messages` rows carry `internet_message_id` too, so an agent can
 check its folder before fetching anything.
+
+`export_messages` does it in bulk: a thread (`conversation_id`, across
+folders), a folder (with `since`/`from_address`) or a list of ids, oldest
+first, each named `YYYYMMDD_<slug>_<token>.md` where the token is 8 hex
+characters of SHA-1 of the Message-ID, so the same message gets the same
+name in every run and mailbox. It dedupes the same way, so a rerun writes
+nothing new; `eml=True` and `attachments=True` bring the raw MIME and the
+files along, and `dry_run=True` shows the plan. For finding the mail in
+the first place, `search_messages` gets past Graph's silent 275-row search
+cap by splitting the date range, and `list_mail_folders(recursive=True)`
+reaches archive subfolders.
 
 Folders built before dedupe and OKF v0.2 exist, and every structure change
 widens the gap. `plan_correspondence_migration` reads ONE such folder
@@ -174,6 +191,11 @@ What each one exists to stop you hand-rolling:
   reply-all is discard + `create_reply_draft(reply_all=True)`: Graph fixes
   the recipients when it seeds the draft.
 - **`remove_attachment`** is `add_attachment`'s inverse, drafts only.
+- **`exclusions_file`** on the profile names a TOML list of addresses not
+  to mail (opted out, bouncing, left). Every draft tool returns
+  `recipient_warnings`, reply-all's inherited recipients included, and
+  `send_draft` refuses an `exclude` match unless `override_exclusions=True`.
+  `check_recipients` tests a list before you build anything.
 - **`verify_message`** is read tier and answers the pre-send questions in
   one call: recipients, attachment names/sizes/kinds, did the quoted
   thread survive, is the signature still there, and which non-ASCII
@@ -259,5 +281,7 @@ its live draft-cycle run is still outstanding; v2.9.0 adds `ckm365 audit`
 and Message-ID dedupe on `export_message`; v2.10.0 adds the
 correspondence migration planner and apply step; v2.10.1 makes its
 `upgrade` front-matter-only, so hand-written sections survive; v2.11.0
-adds the planner's `note` action for files that are not mail. Security + simplification
+adds the planner's `note` action for files that are not mail; v2.12.0
+adds `search_messages`, subfolders, `export_messages`, the recipient
+exclusion list, and thread-aware records (CKM-49). Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).

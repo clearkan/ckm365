@@ -1,4 +1,4 @@
-# Next session — ckm365-93 — 2026-10-26 (updated after v2.11.0, 2026-11-06)
+# Next session — ckm365-93 — 2026-10-26 (updated after v2.12.0, 2026-11-07)
 
 You are resuming ckm365, the multi-tenant Microsoft Graph MCP server, on the
 correspondence-in-a-repo work. Read this first, then `AGENTS.md` (it chains
@@ -9,13 +9,13 @@ This file is committed to the PUBLIC repo on purpose, so it can travel with
 the clone. It therefore names no profiles, tenants, hosts or clients. Real
 profile names come from `uv run ckm365 doctor` on the machine you are on.
 
-## State — verified at the v2.11.0 release
+## State — verified at the v2.12.0 release
 
 - Repo: `main` at the commit carrying this file, pushed. Nothing
   uncommitted, nothing unpushed, no stashes, one worktree.
-- Released: **v2.11.0**, tagged and pushed (58x5p7, the planner's `note`
-  action, via Codex card q4m8vd).
-- Offline suite: 251 passed, 15 skipped. Live suite: 14/14 on both
+- Released: **v2.12.0**, tagged and pushed (xfccc0, cw81fa, CKM-49,
+  k4r9tw; five Codex cards).
+- Offline suite: 372 passed, 18 skipped. Live suite: 17/17 on both
   delegated tenant profiles. live-smoke OK on both.
 
 ## New machine: what does NOT travel with git
@@ -55,36 +55,35 @@ profile names come from `uv run ckm365 doctor` on the machine you are on.
 - Live fact: `$filter=internetMessageId eq '<id>'` on `/messages` works on
   both tenants, across folders. Under-five-minute arrival unmeasured.
 
-## Focus (unchanged)
+## Focus
 
-"next: migration helper, then CKM-49 threading, subfolders/search cap,
-bulk export, recipient exclusions." Migration helper is done; the rest
-in that order.
+The focus list ("migration helper, then CKM-49 threading,
+subfolders/search cap, bulk export, recipient exclusions") is DONE as of
+v2.12.0 (2026-11-07), all through Codex cards with Claude specs and
+reviews. Pick the next focus with seanwy.
 
-## Next actions — in order
+## Next actions — candidates, in the order Claude would take them
 
-1. **CKM-49 threading** (`tvtrb0`, high). `conversationId`,
-   `conversationIndex`, `uniqueBody` on `Message.SELECT`; `in-reply-to`,
-   `references` in `_CURATED_HEADERS`; record body defaults to
-   `uniqueBody` with a `body_scope` key; `resource: mid:<id>`. Every
-   record diffs once: extend the planner's version detection so a
-   pre-CKM-49 v0.2 record becomes an `upgrade`, and the apply step
-   handles it. Good Codex cards: the model/select change, the record
-   change, the planner extension — each test-first.
-2. **Subfolders and the search cap** (`xfccc0`).
-3. **Bulk export** (`k4r9tw`, CKM-53), with the file-name token.
-4. **Recipient exclusion list** (`cw81fa`).
-5. Small follow-ups from the real-folder runs (in mr31re's last comment):
-   a pair destination when `<stem>.md` is taken (needs a naming decision
-   from seanwy), `nk2jc6` (correlate mail to work items). The `note` kind
-   shipped in v2.11.0.
+1. **kw20z6** (high): surfacing gaps, including inline images lost by
+   export (CKM-44: `hasAttachments` is false for inline-only mail).
+2. **tc3vj9**: reply body_html renders in the wrong font unless every
+   paragraph carries a style. A compose bug users see.
+3. **g669gd**: `set_categories`, a small write-tier triage tool; a good
+   Codex card.
+4. **Pair destination** when `<stem>.md` is taken: `export_messages`'
+   name convention (`YYYYMMDD_<slug>_<token>.md`) is the obvious answer;
+   seanwy to confirm before `pair` uses it.
+5. **5gkkbh**: Codex as an MCP client, read tier first, never a global
+   registration.
 
 Follow AGENTS.md "working loop" for each, and "Codex as co-pilot" when
 handing implementation to Codex.
 
 ## Waiting on the user
 
-- **Apply the migration for real** on a project folder: pick one, run
+- **Apply the migration for real** on a project folder (v2.12.0 also
+  upgrades pre-CKM-49 records: checked on copies of two real folders,
+  92 records, every body byte-identical): pick one, run
   `migrate_correspondence` with `dry_run=false` on a clean git tree, review
   the diff. The session that found 6v3d56 has a throwaway worktree for
   this; it was asked to re-run on v2.10.1 and confirm the six annotated

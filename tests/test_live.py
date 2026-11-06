@@ -406,3 +406,38 @@ def _flag_status(ctx, message_id: str) -> str:
     data = g.get(mailbox_path(mb, f"messages/{encode_segment(message_id)}"),
                  params={"$select": "flag"})
     return (data.get("flag") or {}).get("flagStatus", "")
+
+
+def test_search_messages_gets_past_the_275_cap_or_says_why(ctx):
+    # xfccc0. A KQL term common enough to exceed Graph's silent cap of 275
+    # in most mailboxes; a mailbox with fewer matches still checks the shape.
+    r = mail.search_messages(ctx, "the", since="2025-01-01", max_results=600,
+                             mailbox=MAILBOX)
+    ids = [m.id for m in r.messages]
+    assert len(ids) == len(set(ids))
+    stamps = [m.received for m in r.messages]
+    assert stamps == sorted(stamps, reverse=True)
+    if len(ids) >= 275:
+        assert r.windows > 1 or r.truncated_days       # it bisected, or said why
+    assert len(ids) <= 600
+
+
+def test_list_mail_folders_walks_subfolders(ctx):
+    top = mail.list_mail_folders(ctx, mailbox=MAILBOX)
+    tree = mail.list_mail_folders(ctx, recursive=True, mailbox=MAILBOX)
+    assert {f.id for f in top} <= {f.id for f in tree}
+    by_id = {f.id: f for f in tree}
+    for f in tree:
+        if f.parent_id in by_id:                       # a child: path extends its parent's
+            assert f.path == f"{by_id[f.parent_id].path}/{f.name}"
+    assert len(tree) == len(top) + sum(1 for f in tree if f.parent_id in by_id)
+
+
+def test_check_recipients_reads_a_local_list(ctx, tmp_path):
+    # cw81fa: a per-call list; no Graph, no profile change.
+    listed = tmp_path / "exclusions.toml"
+    listed.write_text('[[entries]]\naddress = "colleague@tenant-b.example"\n')
+    w = mail.check_recipients(ctx, ["Colleague <COLLEAGUE@tenant-b.example>",
+                                    "ops@tenant-a.example"],
+                              exclusions_file=str(listed))
+    assert [(x.address, x.action) for x in w] == [("colleague@tenant-b.example", "exclude")]
