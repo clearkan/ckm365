@@ -5,6 +5,7 @@ Open Knowledge Format v0.2 document — see export_message.
 """
 
 import logging
+import re
 from email import message_from_bytes
 from pathlib import Path
 from urllib.parse import quote
@@ -84,7 +85,8 @@ def _sent_folder_id(g: Graph, mailbox: str) -> str | None:
         return None
 
 
-def _tags(message: Message, mailbox: str, sent_folder: str | None) -> list[str]:
+def _tags(message: Message, mailbox: str, sent_folder: str | None,
+          has_attachments: bool) -> list[str]:
     """OKF tags: the facets worth filtering a knowledge repo on.
 
     Direction is OMITTED rather than guessed when Graph gives no sender —
@@ -106,7 +108,7 @@ def _tags(message: Message, mailbox: str, sent_folder: str | None) -> list[str]:
         ("outbound", in_sent or (bool(sender) and sender == mailbox.lower())),
         ("inbound", not in_sent and bool(sender)
          and sender != mailbox.lower()),
-        ("attachments", message.has_attachments),
+        ("attachments", has_attachments),
         ("bulk", bool(headers and headers.is_bulk)),
         ("auto-reply", bool(headers and headers.is_auto_reply))) if on]
 
@@ -163,6 +165,26 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
     unique = not full_body and bool(message.unique_body
                                    and message.unique_body.content.strip())
     body = message.unique_body if unique else message.body
+    has_attachments = message.has_attachments or bool(attachments)
+    inline_count = 0
+    inline_references = {}
+    manifest = []
+    for attachment in attachments:
+        name = attachment.name or "(unnamed)"
+        inline = ""
+        if attachment.is_inline:
+            inline_count += 1
+            inline = f", inline {inline_count}"
+            if attachment.content_id:
+                inline_references[attachment.content_id.strip("<>")] = (
+                    f"[inline {inline_count}: {name}]")
+        manifest.append(
+            f"- {name} — {attachment.size} B, {attachment.kind or 'unknown'}"
+            + inline + f", attachment_id `{attachment.id}`")
+    body_text = re.sub(
+        r"\[cid:([^\]]+)\]",
+        lambda match: inline_references.get(match[1].strip("<>"), match[0]),
+        (body.content if body else "").strip())
     front = {
         # OKF v0.2 core
         "type": "Message",
@@ -170,7 +192,7 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
         "title": message.subject or "(no subject)",
         "description": _yaml_description(message),
         "resource": mid_uri(message.internet_message_id) or message.web_link,
-        "tags": _tags(message, mailbox, sent_folder),
+        "tags": _tags(message, mailbox, sent_folder, has_attachments),
         "generated": {"by": f"ckm365/{version}", "at": message.received},
         # extension keys: the mail specifics OKF has no opinion about
         "from": _who([message.sender]) if message.sender else "",
@@ -184,19 +206,17 @@ def _record(message: Message, attachments: list[Attachment], mailbox: str,
         "references": headers.references if headers else [],
         "web_link": message.web_link,
         "body_scope": "unique" if unique else "full",
-        "has_attachments": message.has_attachments,
+        "has_attachments": has_attachments,
         "is_bulk": bool(headers and headers.is_bulk),
         "is_auto_reply": bool(headers and headers.is_auto_reply),
     }
     lines = ["---"]
     lines += [f"{k}: {_yaml_value(v)}" for k, v in front.items()]
     lines += ["---", "", f"# {message.subject or '(no subject)'}", "",
-              (body.content if body else "").strip(), ""]
+              body_text, ""]
     if attachments:
         lines += ["## Attachments", ""]
-        lines += [f"- {a.name or '(unnamed)'} — {a.size} B, {a.kind or 'unknown'}"
-                  + (", inline" if a.is_inline else "")
-                  + f", attachment_id `{a.id}`" for a in attachments]
+        lines += manifest
         lines += ["",
                   "Fetch the bytes with download_attachment (message_id and "
                   "attachment_id above).", ""]
@@ -274,7 +294,10 @@ def record_bytes(g: Graph, mailbox: str, message_id: str, *,
         g.get(message_path(mailbox, message_id),
               params={"$select": Message.SELECT + ("" if full_body else ",uniqueBody")},
               headers=prefer("text")))
-    items = attachments_of(g, mailbox, message_id) if message.has_attachments else []
+    has_cid = any(body and "[cid:" in body.content
+                  for body in (message.body, message.unique_body))
+    items = (attachments_of(g, mailbox, message_id)
+             if message.has_attachments or has_cid else [])
     record = _record(message, items, mailbox, __version__,
                      _sent_folder_id(g, mailbox), full_body=full_body).encode("utf-8")
     return record, message, len(items)
@@ -321,15 +344,10 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
     Attachment BYTES are never written by either format — the record names
     them and carries their ids; download_attachment fetches them.
 
-    INLINE IMAGES ARE A BLIND SPOT in the `.md` record (CKM-44). A message
-    whose only attachments are inline reports hasAttachments=false, so the
-    record lists no manifest and the body keeps bare `[cid:...]` markers —
-    it reads as complete while missing the point of the message. This is
-    not rare: an annotated slide or a pasted screenshot is often the ENTIRE
-    content of a mail. After exporting, call list_attachments (it always
-    lists, inline included) and archive those bytes yourself; note that
-    inline images routinely share the name "image.png", so download them by
-    attachment_id, not by name.
+    Inline images are numbered in the manifest, and matching `[cid:...]`
+    markers become `[inline N: name]` in the record's body. To save their
+    bytes too, use export_messages with attachments=true. For individual
+    downloads use attachment_id, because inline image names often repeat.
 
     Read tier, no new consent. Same disk rules as download_attachment: an
     existing file is never overwritten, a failure leaves no residue, and

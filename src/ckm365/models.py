@@ -251,13 +251,18 @@ class Attachment:
     download_attachment writes — by 210-230 B on synthetic files and up
     to ~3.8 KB on real mail (measured on two tenants). It is an upper
     bound on the file size, not the file size.
+
+    `content_id` links inline files to cid markers in the body. Selecting
+    plain contentId returns 400 live; the fileAttachment cast form works.
     """
-    SELECT: ClassVar[str] = "id,name,contentType,size,isInline"
+    SELECT: ClassVar[str] = ("id,name,contentType,size,isInline,"
+                             "microsoft.graph.fileAttachment/contentId")
     id: str
     name: str = ""
     content_type: str | None = None
     size: int = 0
     is_inline: bool = False
+    content_id: str | None = None
     kind: str = ""
 
     @classmethod
@@ -266,6 +271,7 @@ class Attachment:
                    content_type=d.get("contentType"),
                    size=int(d.get("size") or 0),
                    is_inline=bool(d.get("isInline")),
+                   content_id=d.get("contentId"),
                    kind=str(d.get("@odata.type") or "").rpartition(".")[2])
 
 

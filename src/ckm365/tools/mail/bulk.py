@@ -56,7 +56,8 @@ def export_messages(ctx: Ctx, dest_dir: str, *, message_ids: list[str] | None = 
     name is reported already, with the existing filename, and kept intact.
 
     eml=true also saves the raw MIME alongside the record. attachments=true
-    saves non-inline attachment bytes into <stem>/; existing files stay.
+    saves attachment bytes into <stem>/, with inline images named
+    inline<N>-<safe_name> to match the record's numbering; existing files stay.
     full_body=true chooses the full body instead of Graph's uniqueBody.
     dry_run=true lists, names and dedupes but writes NOTHING.
     max_messages defaults to 200 (1–1000); truncated says more were found.
@@ -127,14 +128,20 @@ def export_messages(ctx: Ctx, dest_dir: str, *, message_ids: list[str] | None = 
                     export_message(ctx, mid, str(dest / (stem + ".eml")),
                                    dedupe_dir=None, account=account, mailbox=mailbox)
                 if attachments:
+                    inline_count = 0
                     for attachment in attachments_of(g, mb, mid):
-                        if attachment.is_inline:
-                            continue
                         directory = confine(dest / stem, "attachment directory")
                         directory.mkdir(exist_ok=True)
-                        if (directory / safe_name(attachment.name)).exists():
+                        name = safe_name(attachment.name)
+                        if attachment.is_inline:
+                            inline_count += 1
+                            name = f"inline{inline_count}-{name}"
+                        target = directory / name
+                        if target.exists():
                             continue
-                        download_attachment(ctx, mid, str(directory),
+                        download_attachment(ctx, mid,
+                                            str(target if attachment.is_inline
+                                                else directory),
                                             attachment_id=attachment.id,
                                             account=account, mailbox=mailbox)
                         result["attachments"] += 1
