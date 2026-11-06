@@ -182,7 +182,27 @@ Flow: a calendar event's `join_url` → `find_meeting_id` →
    (or `Set-CsTeamsMeetingConfiguration -EnableGraphTranscriptAccess $true
    -Identity Global`). It defaults to OFF and has been **enforced since
    2026-07-29**. `EnableAttributedTranscripts` additionally controls
-   whether speaker names appear; also off by default.
+   whether speaker names appear; also off by default. It gates what the
+   API RETURNS, not what was captured: a transcript recorded while it was
+   off came back fully attributed once it was on.
+
+   Flipping the switch, measured on a live run (2026-08-29):
+   - It can be done headless: the MicrosoftTeams PowerShell module with
+     `Connect-MicrosoftTeams -AccessTokens` and two tokens minted with
+     `az` (one for Graph, one for the Teams resource
+     `48ac35b8-9aa8-4d74-927d-1f4a14a0b239`).
+   - PROPAGATION TAKES ~45-50 MINUTES. The API kept returning the
+     kill-switch 403 for nine five-minute retries after the setting read
+     back true. Poll with backoff, and do not treat the first 403 after
+     the flip as a failure.
+
+After either gate changes, a still-valid access token minted BEFORE the
+change keeps 403ing until it expires. Run `ckm365 refresh <profile>` to
+drop the cached access tokens; the refresh token then mints a new one
+with the new scopes, with no interactive login. `ckm365 doctor --mcp`
+shows whether the MCP registration enables the `meetings` preset at all.
+`export_transcript` does the whole flow in one call and writes every
+part to disk.
 
 What you can read: transcripts of meetings the signed-in user organised
 **or is on the calendar invite for** — attending counts, not just
