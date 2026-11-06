@@ -68,7 +68,7 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
   modify delivered message CONTENT. `send_draft` only
   sends drafts, and only in the send tier. The triage tools are the one
   thing that touches delivered mail, and only its metadata (read state,
-  flag, folder) — write tier, never send tier, since nothing leaves the
+  flag, folder, categories) — write tier, never send tier, since nothing leaves the
   tenant.
 - **No secrets in repo** — env vars or key material outside git only; token
   caches are 0600 files under `~/.local/state/ckm365/` with cross-process
@@ -134,10 +134,13 @@ first, each named `YYYYMMDD_<slug>_<token>.md` where the token is 8 hex
 characters of SHA-1 of the Message-ID, so the same message gets the same
 name in every run and mailbox. It dedupes the same way, so a rerun writes
 nothing new; `eml=True` and `attachments=True` bring the raw MIME and the
-files along, and `dry_run=True` shows the plan. For finding the mail in
+files along (inline images too, as `inline<N>-<name>`, matching the
+record's `[inline N: name]` markers), and `dry_run=True` shows the plan. For finding the mail in
 the first place, `search_messages` gets past Graph's silent 275-row search
 cap by splitting the date range, and `list_mail_folders(recursive=True)`
-reaches archive subfolders.
+reaches archive subfolders. For meetings, `export_transcript` (the
+`meetings` preset) takes a join URL and writes every transcript part as
+the raw `.vtt` plus an OKF `.md` of speaker turns.
 
 Folders built before dedupe and OKF v0.2 exist, and every structure change
 widens the gap. `plan_correspondence_migration` reads ONE such folder
@@ -209,7 +212,8 @@ uv sync
 mkdir -p -m 700 ~/.config/ckm365                          # holds profiles + certs/
 cp profiles.example.toml ~/.config/ckm365/profiles.toml   # then edit
 uv run ckm365 login <profile>                             # device-code flow
-uv run ckm365 doctor                                      # config/login/consent
+uv run ckm365 doctor [--mcp]                              # config/login/consent; --mcp checks the registration
+uv run ckm365 refresh <profile>                           # after new consent: drop cached access tokens
 uv run ckm365 audit [--exchange] [--md]                   # who can reach mail; why it fails (docs/access-audit.md)
 uv run python scripts/live-smoke.py <profile>             # verify the READ path
 uv run python scripts/draft-cycle-smoke.py <profile>      # verify the WRITE path
@@ -261,7 +265,7 @@ The Softeria `ms-365-mcp-server` was studied as a reference (see
 
 ## Status
 
-Phases 1–2 complete and live-verified on two tenants: 32 tools (mail /
+Phases 1–2 complete and live-verified on two tenants: 47 tools (mail /
 calendar / watch / accounts / teams / meetings), three-tier gating, admin
 CLI, live integration suite, the thread-safety contract and supported
 programmatic API (SemVer'd; releases are tagged `vX.Y.Z` for downstream
@@ -283,5 +287,8 @@ correspondence migration planner and apply step; v2.10.1 makes its
 `upgrade` front-matter-only, so hand-written sections survive; v2.11.0
 adds the planner's `note` action for files that are not mail; v2.12.0
 adds `search_messages`, subfolders, `export_messages`, the recipient
-exclusion list, and thread-aware records (CKM-49). Security + simplification
+exclusion list, and thread-aware records (CKM-49); v2.13.0 adds
+`set_categories`, `export_transcript`, inline images in records, the
+opt-in compose font, `ckm365 refresh`, `doctor --mcp` and audit exit
+codes for CI. Security + simplification
 reviews done. Next: SharePoint/Teams file sync (CKM-18).

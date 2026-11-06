@@ -1,4 +1,4 @@
-# Next session — ckm365-93 — 2026-10-26 (updated after v2.12.0, 2026-11-07)
+# Next session — ckm365-93 — 2026-10-26 (updated after v2.13.0, 2026-11-07)
 
 You are resuming ckm365, the multi-tenant Microsoft Graph MCP server, on the
 correspondence-in-a-repo work. Read this first, then `AGENTS.md` (it chains
@@ -9,14 +9,17 @@ This file is committed to the PUBLIC repo on purpose, so it can travel with
 the clone. It therefore names no profiles, tenants, hosts or clients. Real
 profile names come from `uv run ckm365 doctor` on the machine you are on.
 
-## State — verified at the v2.12.0 release
+## State — verified at the v2.13.0 release
 
 - Repo: `main` at the commit carrying this file, pushed. Nothing
   uncommitted, nothing unpushed, no stashes, one worktree.
-- Released: **v2.12.0**, tagged and pushed (xfccc0, cw81fa, CKM-49,
-  k4r9tw; five Codex cards).
-- Offline suite: 372 passed, 18 skipped. Live suite: 17/17 on both
-  delegated tenant profiles. live-smoke OK on both.
+- Released: **v2.13.0**, tagged and pushed: g669gd, kw20z6 (all four
+  gaps), ba1m7k item 3, tc3vj9 (built, render check pending), 2tcqc0
+  parts 1-2. Seven Codex cards, all merged; an independent review of
+  the whole diff found no serious defect (its five cheap fixes are in).
+- Offline suite: 493 passed, 18 skipped. Live suite: 17/17 on both
+  delegated profiles at the release. The new pieces were also checked
+  live one by one (see "Done").
 
 ## New machine: what does NOT travel with git
 
@@ -32,7 +35,26 @@ profile names come from `uv run ckm365 doctor` on the machine you are on.
   AGENTS.md section says how).
 - Then: `uv sync`, `uv run pytest tests/ -q`, `uv run ckm365 doctor`.
 
-## Done this session
+## Done this session (v2.13.0, 2026-11-07)
+
+- `set_categories` (g669gd), write tier. NOT exercised live: it writes
+  to a real mailbox, so that waits for seanwy's OK.
+- Inline images in records (kw20z6 gap 4). Live, read-only: 10 of 10
+  cid markers rewritten on three inline-only messages. Measured: the
+  plain `contentId` `$select` is a 400; the cast
+  `microsoft.graph.fileAttachment/contentId` works.
+- `export_transcript` (gap 2). Live: lookup and listing work; content
+  routes answer 403 on both device-code profiles (consent tier or the
+  Teams kill-switch), so a content pull is still unverified.
+- `doctor --mcp` (gap 1, ba1m7k): run for real here, correct.
+- `ckm365 refresh` (gap 3): run for real on one profile; the next read
+  minted a fresh token silently.
+- Compose font (tc3vj9), OPT-IN per profile (`compose_font`), because
+  ckm365 cannot read the mailbox font. Needs the Outlook render check.
+- `audit` exit codes, `--fail-on`, baseline (2tcqc0 parts 1-2).
+- docs/usage-modes.md now records the transcript kill-switch findings.
+
+## Done in earlier sessions
 
 - **mr31re shipped in v2.10.0** (board: done): `plan_correspondence_migration`
   and `migrate_correspondence` in `src/ckm365/tools/mail/migrate.py`, read
@@ -57,29 +79,40 @@ profile names come from `uv run ckm365 doctor` on the machine you are on.
 
 ## Focus
 
-The focus list ("migration helper, then CKM-49 threading,
-subfolders/search cap, bulk export, recipient exclusions") is DONE as of
-v2.12.0 (2026-11-07), all through Codex cards with Claude specs and
-reviews. Pick the next focus with seanwy.
+The v2.12.0 focus list and the v2.13.0 sweep (kw20z6, tc3vj9, g669gd,
+ba1m7k, 2tcqc0 1-2) are DONE. What is left in the backlog is mostly
+tenant work or design questions. Pick the next focus with seanwy.
 
 ## Next actions — candidates, in the order Claude would take them
 
-1. **kw20z6** (high): surfacing gaps, including inline images lost by
-   export (CKM-44: `hasAttachments` is false for inline-only mail).
-2. **tc3vj9**: reply body_html renders in the wrong font unless every
-   paragraph carries a style. A compose bug users see.
-3. **g669gd**: `set_categories`, a small write-tier triage tool; a good
-   Codex card.
-4. **Pair destination** when `<stem>.md` is taken: `export_messages`'
+1. **Pair destination** when `<stem>.md` is taken: `export_messages`'
    name convention (`YYYYMMDD_<slug>_<token>.md`) is the obvious answer;
    seanwy to confirm before `pair` uses it.
-5. **5gkkbh**: Codex as an MCP client, read tier first, never a global
+2. **5gkkbh**: Codex as an MCP client, read tier first, never a global
    registration.
+3. **nk2jc6**: correlating mail to work items without a subject key; a
+   design discussion before any code.
+4. **dqgcdk**: one shared serve process instead of one per session
+   (efficiency, not urgent).
+5. Transcript change notifications (kw20z6's open question), if
+   polling for transcripts keeps coming up.
 
 Follow AGENTS.md "working loop" for each, and "Codex as co-pilot" when
 handing implementation to Codex.
 
 ## Waiting on the user
+
+- **tc3vj9 render check**: set `compose_font` on the affected profile,
+  create a reply draft with three bare paragraphs, revise the middle
+  one, and compare it with the quoted history in Outlook desktop and OWA.
+  The issue stays open until then.
+- **set_categories live**: OK to tag one test message and remove it
+  again?
+- **Transcript content pull**: needs a tenant where
+  add-transcript-scopes.sh ran and the kill-switch is on; then
+  `ckm365 refresh <profile>` and `export_transcript`.
+- **2tcqc0 part 3**: read-only credentials for unattended audits
+  (tenant work).
 
 - **Apply the migration for real** on a project folder (v2.12.0 also
   upgrades pre-CKM-49 records: checked on copies of two real folders,
@@ -99,6 +132,12 @@ handing implementation to Codex.
   registration is read-only (recommended).
 
 ## Gotchas (new ones first)
+
+- A spec's mock must compare `request.url.path` DECODED and with the
+  `/v1.0` prefix (match on a suffix). An exact encoded path cost one
+  round this session; Codex reported it correctly.
+- Run a throwaway prototype of a pure transform against its spec before
+  queuing the card: two spec bugs in one session is the signal.
 
 - Codex's ChatGPT login does not always survive a reboot or a CLI
   upgrade. A tick that ends in 14 s with zero tokens and a "no valid

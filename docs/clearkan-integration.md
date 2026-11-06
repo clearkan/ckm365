@@ -163,6 +163,16 @@ them.
   text only by default. A consumer that matched `type: Email` or read
   `resource` as a URL needs updating; `migrate_correspondence` upgrades
   old records in place, front matter only.
+- **v2.13.0**: new tools `set_categories` (write tier) and
+  `export_transcript` (read, `meetings` preset); `Attachment` gains
+  `content_id`; `Profile` gains `compose_font`/`compose_size`; new CLI
+  `ckm365 refresh` and `doctor --mcp`. Additive on the pinned surface.
+  Two behaviour changes worth a look: the `.md` record now lists inline
+  images (even when Graph says `hasAttachments: false`), rewrites their
+  `[cid:...]` markers to `[inline N: name]` and sets `has_attachments`
+  from the manifest, so re-exporting such a message changes its file;
+  and `ckm365 audit` exits by severity (RISK is now 3, was 1; see
+  `--fail-on`).
 
 ---
 

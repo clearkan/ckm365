@@ -3,6 +3,86 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [2.13.0] — 2026-11-07
+
+### Added
+- **`set_categories`** (g669gd, CKM-51), write tier beside the other
+  triage tools: add and/or remove Outlook categories on a batch of
+  messages. Graph's PATCH replaces the whole list, so the tool reads,
+  merges (names compare case-insensitively, existing order kept) and
+  PATCHes only the messages that change; last write wins if Outlook
+  edits the list in between. A name missing from the mailbox's master
+  categories is created (colour preset7). That needs
+  MailboxSettings.ReadWrite, which ckm365 does not request, so a refusal
+  comes back as `master_warning` and the labels still land.
+- **`export_transcript`** (kw20z6 gap 2, CKM-44), read tier in the
+  `meetings` preset: a Teams meeting's join URL in, EVERY transcript
+  part out, in creation order (a stopped and restarted transcription
+  makes two, and "newest only" once dropped 32 minutes). Each part is
+  written as the verbatim `.vtt` plus an OKF `.md` record of speaker
+  turns with `[hh:mm:ss]` and provenance (`transcript_created_utc`,
+  `sha256`, `size`), named `<YYYYMMDD_slug_token>-transcript-part<N>`
+  like `export_messages`. Reruns skip what exists. Content never passes
+  through the agent or the log. Lookup and listing verified live; a
+  content pull still needs a tenant with transcript access enabled.
+- **`ckm365 doctor --mcp`** (ba1m7k, kw20z6 gap 1): checks the
+  Claude Code MCP registration, which is the server's real environment.
+  It warns when an app-only profile's credential variables are not
+  declared on the registration's `env`, since doctor can pass in a
+  terminal while `ckm365 serve` has no credential. It also lists the
+  presets the registration does not enable, so a missing `meetings` is
+  visible from the tool side. Names only, never values or paths;
+  warnings never fail the run.
+
+- **Compose font per paragraph** (tc3vj9), opt-in per profile:
+  `compose_font` (e.g. "Calibri,sans-serif") and `compose_size`
+  (default 11pt). Outlook does not pass a wrapper's style down to
+  paragraphs, so a reply built from bare `<p>` rendered in Times above
+  a quoted history in Calibri. With `compose_font` set, each composed
+  paragraph that names no font gets Outlook's own styled span and
+  12pt bottom margin, in create_reply_draft, create_forward_draft,
+  create_draft, revise_draft and create_persona_reply. The signature
+  and update_draft are never restyled. Unset, bodies are unchanged.
+- **`ckm365 refresh <profile>`** (kw20z6 gap 3): after new consent, a
+  still-valid access token minted before it keeps 403ing until it
+  expires. `refresh` drops only the cached access tokens, under the
+  cache lock, and keeps the refresh token, account and id token, so the
+  next call mints a fresh token with the new scopes and no login.
+  Contacts no network. Verified live. docs/usage-modes.md now also
+  records the Teams transcript kill-switch findings: it can be flipped
+  headless, and propagation takes about 45-50 minutes.
+
+### Changed
+- **`ckm365 audit` exits by severity** (2tcqc0): 0 clean, 1 WARN,
+  2 FAIL, 3 RISK, the highest level winning. `--fail-on
+  {warn,fail,risk}` sets the CI threshold (default `risk`, so only RISK
+  fails a run as before, but now with code 3 rather than 1). FAIL stays
+  distinct: an audit that could not see something is not clean.
+  `--baseline FILE` accepts known WARN/RISK findings, which are still
+  reported (marked `(baselined)`) but no longer raise the exit code;
+  `--write-baseline FILE` writes today's findings (0600; the file names
+  real accounts, so keep it out of public repos). FAIL is never
+  baselined.
+
+### Fixed
+- **Inline images are no longer invisible in exported records**
+  (kw20z6 gap 4, CKM-44). Graph says `hasAttachments: false` when every
+  attachment is inline, so a message whose substance was two pasted
+  images exported as a record with no manifest and bare `[cid:...]`
+  markers. The record now lists attachments whenever the text carries
+  a cid marker, numbers inline images in the manifest, and rewrites
+  each matching marker to `[inline N: name]`; `has_attachments` and the
+  `attachments` tag follow the manifest. `Attachment` gains
+  `content_id` (selected with the cast
+  `microsoft.graph.fileAttachment/contentId`; the plain property is a
+  400 live). `export_messages(attachments=True)` now saves inline
+  images too, as `<stem>/inline<N>-<name>`, since they routinely share
+  a name. Verified live, read-only: 10 of 10 markers on three
+  inline-only messages.
+- `export_messages(attachments=True)` skips attachments that have no
+  bytes (embedded messages, cloud links) instead of failing the whole
+  message; the record's manifest still lists them.
+
 ## [2.12.0] — 2026-11-07
 
 ### Added
