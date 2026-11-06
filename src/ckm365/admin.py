@@ -18,6 +18,7 @@ Addresses in help text are placeholders (user@tenant-a.example style).
 
 import argparse
 import json
+import os
 import re
 import shlex
 import shutil
@@ -96,13 +97,16 @@ def add_parsers(sub) -> None:
 
     doc = sub.add_parser(
         "doctor",
-        help="local health checks: profiles, caches, logins, consent tier",
+        help="local health checks: profiles, caches, logins, consent tier, "
+             "optional MCP registration",
         description="Check the local setup only — profiles file, token cache "
                     "presence and permissions, signed-in accounts, and which "
                     "capability tier the cached consent likely supports. "
                     "Never touches a tenant; exits non-zero on any failure.")
     doc.add_argument("profile", nargs="?",
                      help="check one profile (default: all configured)")
+    doc.add_argument("--mcp", action="store_true",
+                     help="also check MCP registration credentials and presets")
 
 
 def run(args: argparse.Namespace) -> int:
@@ -322,6 +326,42 @@ def _app(args: argparse.Namespace) -> int:
 
 # --- doctor: local-only health checks ---------------------------------------
 
+def mcp_registrations() -> list[tuple[str, dict]]:
+    """Read ckm365 registrations in user, project, then local-file order.
+
+    Labels deliberately omit project directories and registration paths.
+    Missing, unreadable or malformed configuration contributes no entries.
+    """
+    def read(path: Path) -> dict:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    found: list[tuple[str, dict]] = []
+
+    def collect(label: str, data) -> None:
+        if not isinstance(data, dict):
+            return
+        servers = data.get("mcpServers")
+        if isinstance(servers, dict):
+            entry = servers.get("ckm365")
+            if isinstance(entry, dict):
+                found.append((label, entry))
+
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    root = Path(config_dir) if config_dir is not None else Path.home()
+    data = read(root / ".claude.json")
+    collect("user", data)
+    projects = data.get("projects")
+    if isinstance(projects, dict):
+        for project in projects.values():
+            collect("project", project)
+    collect(".mcp.json", read(Path.cwd() / ".mcp.json"))
+    return found
+
+
 def _cache_tier(cache_path: Path) -> str | None:
     """Which capability tier the cached consent likely supports. Reads only
     the scope lists ('target') from the MSAL cache — never token material."""
@@ -344,10 +384,11 @@ def _doctor(args: argparse.Namespace) -> int:
     """Local checks with a next step per failure; 1 if anything failed."""
     failed = 0
 
-    def check(ok: bool, label: str, advice: str = "") -> bool:
+    def check(ok: bool | None, label: str, advice: str = "") -> bool | None:
         nonlocal failed
-        failed += 0 if ok else 1
-        print(f"  {'ok  ' if ok else 'FAIL'} {label}"
+        failed += 1 if ok is False else 0
+        status = "warn" if ok is None else "ok  " if ok else "FAIL"
+        print(f"  {status} {label}"
               + (f" — {advice}" if advice and not ok else ""))
         return ok
 
@@ -394,6 +435,46 @@ def _doctor(args: argparse.Namespace) -> int:
         check(tier is not None,
               f"cached consent likely supports: {tier or 'unknown'}",
               f"no scopes readable — run: uv run ckm365 login {p.name}")
+    if args.mcp:
+        from .tools import ALL_PRESETS, PRESETS
+
+        registrations = mcp_registrations()
+        if not registrations:
+            check(None, "no ckm365 MCP registration",
+                  "this is fine for programmatic use")
+        for label, entry in registrations:
+            print(f"doctor: MCP registration ({label})")
+            env = entry.get("env")
+            env = env if isinstance(env, dict) else {}
+            for p in targets:
+                if p.auth != "client_credential":
+                    continue
+                secret = p._env("CLIENT_SECRET")
+                cert = p._env("CLIENT_CERT_PATH")
+                thumb = p._env("CLIENT_CERT_THUMBPRINT")
+                if secret in env or (cert in env and thumb in env):
+                    check(True, f"credential for {p.name} declared on the registration")
+                else:
+                    check(None, f"credential for {p.name} not declared on the registration",
+                          f"add {secret} or both {cert} and {thumb} "
+                          "with claude mcp add -e")
+            serve_args = entry.get("args")
+            serve_args = serve_args if isinstance(serve_args, list) else []
+            preset = "all"
+            for i, arg in enumerate(serve_args):
+                if arg == "--preset" and i + 1 < len(serve_args):
+                    if isinstance(serve_args[i + 1], str):
+                        preset = serve_args[i + 1]
+                elif isinstance(arg, str) and arg.startswith("--preset="):
+                    preset = arg.split("=", 1)[1]
+            enabled = set(preset.split(","))
+            if "all" in enabled:
+                enabled.update(ALL_PRESETS)
+            missing = [name for name in PRESETS if name not in enabled]
+            if missing:
+                print(f"  note presets not enabled: {', '.join(missing)}")
+                print("       meetings and teams need their consent scripts first "
+                      "(add-transcript-scopes.sh, add-teams-scopes.sh)")
     print("doctor: all checks passed" if not failed
           else f"doctor: {failed} check(s) FAILED")
     return 1 if failed else 0
