@@ -78,7 +78,7 @@ class FakeAuth:
         return MAILBOX
 
 
-def _ctx(known=None, where=MAILBOX):
+def _ctx(known=None, where=MAILBOX, invalid=()):
     """Answers the Message-ID filter in mailbox `where` only, and serves
     thread metadata for the ids it knows. Records every request."""
     known = known if known is not None else {ID1: "m1", ID2: "m2"}
@@ -87,6 +87,9 @@ def _ctx(known=None, where=MAILBOX):
     def handler(request):
         seen.append(request)
         path = request.url.path
+        if any(f"/users/{x}/" in path for x in invalid):
+            return httpx.Response(404, json={"error": {
+                "code": "ErrorInvalidUser", "message": "invalid user"}})
         q = {k: v[0] for k, v in parse_qs(urlsplit(str(request.url)).query).items()}
         if path.endswith("/messages"):
             m = re.search(r"internetMessageId eq '(.*)'", q.get("$filter", ""))
@@ -180,7 +183,7 @@ def test_dry_run_looks_up_and_writes_nothing(tmp_path):
     r = results(ctx, tmp_path)["old.md"]
     assert r["outcome"] == "would-apply" and "body kept" in r["detail"]
     assert (tmp_path / "old.md").read_bytes() == before
-    assert any("$filter" in str(q.url) for q in seen)
+    assert any("$filter" in q.url.params for q in seen)
 
 
 def test_not_found_leaves_the_file_alone(tmp_path):
@@ -198,8 +201,19 @@ def test_the_records_own_mailbox_is_tried_first(tmp_path):
     ctx, seen = _ctx(where=SHARED)
     r = results(ctx, tmp_path, dry_run=False)["old.md"]
     assert r["outcome"] == "applied"
-    first = next(q for q in seen if "$filter" in str(q.url))
+    first = next(q for q in seen if "$filter" in q.url.params)
     assert f"/users/{SHARED}/messages" in first.url.path
+
+
+def test_an_unknown_own_mailbox_falls_through_to_the_selected_one(tmp_path):
+    # Live, 2026-11-07: records exported from one tenant name a mailbox the
+    # other tenant's profile cannot see; Graph answers 404 ErrorInvalidUser.
+    (tmp_path / "old.md").write_text(v02_email().replace(
+        f'mailbox: "{MAILBOX}"', 'mailbox: "someone@tenant-b.example"'))
+    ctx, seen = _ctx(invalid=("someone@tenant-b.example",))
+    r = results(ctx, tmp_path, dry_run=False)["old.md"]
+    assert r["outcome"] == "applied"
+    assert any("/users/someone@tenant-b.example/" in q.url.path for q in seen)
 
 
 def test_a_v01_record_is_brought_fully_current_in_one_write(tmp_path):

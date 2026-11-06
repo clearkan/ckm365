@@ -179,9 +179,9 @@ def test_a_conversation_exports_every_message_oldest_first(tmp_path):
     names = sorted(p.name for p in tmp_path.iterdir())
     assert names == sorted(f"{x['name']}" for x in r["results"])
     assert by_id(r)["m1"]["name"] == f"20260301_q1-figures_{token('<m1@tenant-b.example>')}.md"
-    f = next(q for q in seen if "$filter" in str(q.url))
+    f = next(q for q in seen if "$filter" in q.url.params)
     assert f.url.path == f"/v1.0/users/{MAILBOX}/messages"       # across folders
-    assert "$orderby" not in str(f.url)                           # Graph refuses it
+    assert "$orderby" not in f.url.params                         # Graph refuses it
 
 
 def test_records_are_real_exports(tmp_path):

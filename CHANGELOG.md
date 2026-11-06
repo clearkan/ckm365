@@ -53,15 +53,30 @@ All notable changes to ckm365 are documented here. Format follows
     `unique_body` (the last fetched by export only); `MessageHeaders`
     gains `in_reply_to` and `references`, the latter tokenised by id
     rather than capped at 200 characters.
-  Records already on disk are brought up to date by the migration
-  helper (the next step of tvtrb0).
+- **The migration helper brings pre-CKM-49 records up to date** (tvtrb0
+  step 2). The planner calls a v0.2 record without `channel`
+  `okf-0.2-email` and proposes `upgrade`; the apply step looks the
+  message up by Message-ID (the record's own mailbox first, then the
+  selected one; a mailbox another tenant owns falls through), reads
+  `conversationId` and the internet headers (never a body), and rewrites
+  the front matter only: type, channel, `mid:` resource, thread keys,
+  `web_link`, `body_scope: "full"` (true of an old body), `generated.by`.
+  An OKF v0.1 record gets both upgrades in one write. A record without a
+  Message-ID is now `manual` (the upgrade needs Graph). A hand-written
+  front matter typed Message is mail when its channel is email or absent.
+  Checked on temporary copies of two real folders: 92 records upgraded,
+  every body byte-identical, a second run changes nothing.
 - `Draft` is now a subclass of `Message` (it was an alias) carrying
   `recipient_warnings`. `isinstance(d, Message)` still holds.
 - `list_messages`' description says its `search` stops at 275 silently
   and points to `search_messages`.
 
 ### Process
-- Codex card e8r5wc for the CKM-49 record, merged as delivered.
+- Codex card e8r5wc for the CKM-49 record, merged as delivered; card
+  w3c9pg for the upgrade, which stopped on two spec assertions that were
+  wrong (an encoded URL); at merge the metadata GET went through
+  message_path and a 404 on one candidate mailbox falls through (found
+  by the real-folder dry run).
 - Codex card v6n4tj for the exclusion list; at merge the error message
   gained its reason and the send log kept its mailbox and message id.
 - Codex card z2k7hm; two changes at merge (`hit_max_results` only when

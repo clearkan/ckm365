@@ -2,16 +2,19 @@
 
 import json
 import logging
+import re
 from collections import Counter
 from email import message_from_bytes
 from pathlib import Path
 
 from ... import __version__
 from ...graph import GraphError, mailbox_path
+from ...models import MessageHeaders
 from ..context import Ctx
+from .common import message_path
 from .disk import confine, write_atomic, write_target
-from .export import (_MAX_FRONT_MATTER, eml_id, front_matter_id, id_key,
-                     record_bytes)
+from .export import (_MAX_FRONT_MATTER, _yaml_value, eml_id, front_matter_id,
+                     id_key, mid_uri, record_bytes)
 
 log = logging.getLogger("ckm365")
 
@@ -47,7 +50,7 @@ def _record_version(path: Path) -> str:
     if keys is None:
         return "none"
     if "generated" in keys:
-        return "okf-0.2"
+        return "okf-0.2" if "channel" in keys else "okf-0.2-email"
     if keys.keys() & {"timestamp", "exported_by"}:
         return "okf-0.1"
     return "hand-written"
@@ -63,8 +66,8 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
 
     Each item proposes an action:
     - none: keep this current record, identified sidecar, or paired .eml.
-    - upgrade: rewrite an OKF v0.1 record's front matter to v0.2; the
-      body, and anything a person wrote below it, is kept.
+    - upgrade: bring old front matter to the current shape, with thread
+      keys from Graph; the body and anything a person wrote below it are kept.
     - backfill-id: copy the Message-ID from the same-stem .eml into a
       hand-written record; the plan reports the proposed id and pair.
     - pair: create a record for a raw .eml that has no matching record.
@@ -141,10 +144,16 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
                 item["internet_message_id"] = front_matter_id(path)
                 if item["version"] == "okf-0.2":
                     item["action"] = "none"
-                elif item["version"] == "okf-0.1":
-                    item["action"] = "upgrade"
+                elif item["version"] in {"okf-0.1", "okf-0.2-email"}:
+                    if id_key(item["internet_message_id"]):
+                        item["action"] = "upgrade"
+                    else:
+                        item["reason"] = "No Message-ID for the Graph metadata lookup"
                 elif item["version"] == "hand-written":
-                    if "type" in fields and fields["type"].lower() != "email":
+                    record_type = fields.get("type", "").lower()
+                    if (("type" in fields and record_type not in {"email", "message"})
+                            or (record_type == "message"
+                                and fields.get("channel", "email").lower() != "email")):
                         item.update(action="note", reason=f"Non-mail type: {fields['type']}")
                     elif id_key(item["internet_message_id"]):
                         item["action"] = "none"
@@ -233,26 +242,69 @@ def _backfill_bytes(path: Path, internet_message_id: str) -> bytes:
     return b"".join(lines)
 
 
-def _upgrade_bytes(path: Path) -> bytes:
-    """OKF v0.1 to v0.2 in the front matter ONLY: `timestamp: X` becomes
-    `generated: {by: "ckm365/<version>", at: X}` and `exported_by` goes
-    (CHANGELOG 2.8.0 is exactly that delta). Nothing after the closing
-    fence is touched: a person may have written below the mail (6v3d56),
-    and re-exporting from Graph would have thrown that away."""
+def _upgrade_bytes(path: Path, internet_message_id: str, metadata: dict, *,
+                   version: str) -> bytes:
+    """Bring old front matter to the current shape, using thread metadata.
+
+    OKF v0.1 first gets `timestamp: X` -> `generated: {by: ..., at: X}`
+    and loses `exported_by`. Both upgrades edit one list of lines, for one
+    atomic write. Nothing after the closing fence is touched: a person
+    may have written below the mail (6v3d56), and re-exporting from Graph
+    would have thrown that away.
+    """
     lines, fence, newline = _front_matter_lines(path)
-    head, stamped = [], False
-    for line in lines[:fence]:
+    head = lines[:fence]
+    if version == "okf-0.1":
+        upgraded, stamped = [], False
+        for line in head:
+            key, _, value = line.partition(b":")
+            if key.strip() == b"timestamp":
+                upgraded.append(b"generated: {by: "
+                                + _yaml_value(f"ckm365/{__version__}").encode()
+                                + b", at: " + value.strip() + b"}" + newline)
+                stamped = True
+            elif key.strip() != b"exported_by":
+                upgraded.append(line)
+        if not stamped:
+            raise ValueError("No timestamp in the front matter to upgrade")
+        head = upgraded
+
+    def field(name: str, value) -> bytes:
+        return f"{name}: {_yaml_value(value)}".encode("utf-8") + newline
+
+    headers = MessageHeaders.from_graph(metadata)
+    web_link = b'""'
+    for line in head:
         key, _, value = line.partition(b":")
-        if key.strip() == b"timestamp":
-            head.append(b"generated: {by: "
-                        + json.dumps(f"ckm365/{__version__}").encode()
-                        + b", at: " + value.strip() + b"}" + newline)
-            stamped = True
-        elif key.strip() != b"exported_by":
-            head.append(line)
-    if not stamped:
-        raise ValueError("No timestamp in the front matter to upgrade")
-    return b"".join(head + lines[fence:])
+        if key == b"resource":
+            web_link = value.strip()
+            break
+    body_fields = [b"web_link: " + web_link + newline,
+                   field("body_scope", "full")]
+    rewritten = []
+    for line in head:
+        key = line.partition(b":")[0]
+        if key == b"type":
+            rewritten.extend([field("type", "Message"), field("channel", "email")])
+        elif key == b"resource":
+            rewritten.append(field("resource", mid_uri(internet_message_id)))
+        elif key == b"generated":
+            # Replace only `by`: keep the timestamp's exact spelling and quoting.
+            rewritten.append(re.sub(
+                rb'''(\bby\s*:\s*)(?:"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,}]+)''',
+                lambda match: match[1] + _yaml_value(f"ckm365/{__version__}").encode(),
+                line, count=1))
+        else:
+            if key == b"has_attachments":
+                rewritten.extend(body_fields)
+                body_fields = []
+            rewritten.append(line)
+            if key == b"internet_message_id":
+                rewritten.extend([
+                    field("conversation_id", metadata.get("conversationId") or ""),
+                    field("in_reply_to", headers.in_reply_to or ""),
+                    field("references", headers.references)])
+    return b"".join(rewritten + body_fields + lines[fence:])
 
 
 def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = None,
@@ -266,10 +318,10 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
     actions defaults to upgrade, pair and backfill-id; pass a subset to
     limit this pass. No mail in Graph is ever changed.
 
-    upgrade rewrites only the front matter of our old OKF v0.1 record, in
-    place and without Graph; the body, including anything a person added
-    below the mail, is kept byte for byte. pair writes a .md record beside
-    a lone .eml and refuses an existing destination file. backfill-id
+    upgrade rewrites only old OKF front matter in place, using Graph for
+    thread metadata; it reads no body and keeps the body, including anything
+    a person added below the mail, byte for byte. pair writes a .md record
+    beside a lone .eml and refuses an existing destination file. backfill-id
     inserts the paired .eml's Message-ID into a hand-written record's
     front matter, without Graph. No body is EVER rewritten, nothing is
     deleted, and writes are atomic.
@@ -277,8 +329,8 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
     Outcomes: would-apply describes a dry-run write; applied means written;
     skipped carries the planner's reason for manual/duplicate items, or
     says the action was not requested. Current items (none) are omitted.
-    not-found means no Message-ID hit for a lone .eml in the selected
-    mailbox. A message delivered minutes ago may not be indexed
+    not-found means no Message-ID hit for an upgrade or a lone .eml in the
+    candidate mailboxes. A message delivered minutes ago may not be indexed
     yet: a missing hit must not be assumed to mean the message is gone.
     failed carries a per-file error; other items still proceed.
 
@@ -309,9 +361,40 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
             path = confine(folder / item["name"], "source")
             imid = item["internet_message_id"]
             if action == "upgrade":
-                data = _upgrade_bytes(path)
-                detail = (f"Rewrite {path.name} front matter (timestamp to "
-                          "generated, exported_by dropped); body kept")
+                g, mb = ctx.target(account, mailbox)
+                own_mailbox = (_front_matter(path) or {}).get("mailbox")
+                candidates = list(dict.fromkeys(
+                    [own_mailbox, mb] if own_mailbox else [mb]))
+                escaped = imid.replace("'", "''")
+                hits = []
+                for candidate in candidates:
+                    try:
+                        hits = g.get(mailbox_path(candidate, "messages"), params={
+                            "$filter": f"internetMessageId eq '{escaped}'",
+                            "$select": "id", "$top": 2}).get("value", [])
+                    except GraphError as exc:
+                        # A record's own mailbox may live in another tenant
+                        # (Graph: 404 ErrorInvalidUser): try the next one.
+                        if exc.status != 404:
+                            raise
+                        hits = []
+                    if hits:
+                        mb = candidate
+                        break
+                if not hits:
+                    result.update(outcome="not-found", detail=(
+                        f"Message-ID not found in mailboxes {', '.join(candidates)}. "
+                        "A message delivered minutes ago may not be indexed yet; "
+                        "do not assume it is gone."))
+                    continue
+                metadata = g.get(message_path(mb, hits[0]["id"]),
+                                 params={"$select": "conversationId,internetMessageHeaders"})
+                data = _upgrade_bytes(path, imid, metadata, version=item["version"])
+                legacy = ("timestamp to generated, exported_by dropped, "
+                          if item["version"] == "okf-0.1" else "")
+                detail = (f"Rewrite {path.name} front matter ({legacy}type to Message, "
+                          "channel email, resource to mid URI, Graph thread keys, "
+                          "web_link, body_scope full, generated by updated); body kept")
                 dest = path
             elif action == "backfill-id":
                 data = _backfill_bytes(path, imid)
