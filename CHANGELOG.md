@@ -3,6 +3,30 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [Unreleased]
+
+### Added
+- **`search_messages`** (xfccc0), a read-tier tool for searches that can
+  match more than 275 messages. Graph's `$search` stops at 275 rows
+  SILENTLY (measured on two tenants, root and folder alike). The tool
+  adds a KQL `received:` range to the parenthesised query and bisects
+  any window that comes back full, until every window is complete; a
+  single day that is still full is listed in `truncated_days` instead of
+  being cut quietly. Windows run newest first, so `max_results` keeps
+  the newest. Live: 385 matches in 3 windows on one tenant, 5,000 (the
+  limit) in 55 windows on the other, sorted and unique.
+- **`list_mail_folders` reaches subfolders** (xfccc0): `parent` lists one
+  folder's children, `recursive` walks the tree. Every `MailFolder` now
+  carries `parent_id` and `path` ("Archive/2026/Vendor").
+
+### Changed
+- `list_messages`' description says its `search` stops at 275 silently
+  and points to `search_messages`.
+
+### Process
+- Codex card z2k7hm; two changes at merge (`hit_max_results` only when
+  something was left unsearched; the folder-scope note).
+
 ## [2.11.0] — 2026-11-06
 
 ### Added

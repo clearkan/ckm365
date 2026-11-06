@@ -12,7 +12,8 @@ ALWAYS = [accounts.list_accounts]  # registered with every preset
 #   meetings — transcript retrieval (CKM-30); additionally gated by a
 #              Teams tenant setting, not just Graph consent
 READ = {
-    "mail": [mail.list_messages, mail.get_message, mail.get_message_headers,
+    "mail": [mail.list_messages, mail.search_messages,
+             mail.get_message, mail.get_message_headers,
              mail.list_mail_folders,
              mail.list_attachments, mail.download_attachment,
              mail.export_message, mail.group_by_sender, mail.verify_message,

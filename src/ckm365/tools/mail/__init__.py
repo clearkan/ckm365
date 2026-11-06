@@ -7,7 +7,7 @@ detail — import from this package, never from its submodules.
     common.py       paths, Prefer headers, the draft guard, the compose
                     fence, /$batch fan-out
     disk.py         writing mail content to LOCAL disk, safely
-    read.py         listings, one message, curated headers, folders, counts
+    read.py         listings, search_messages, one message, curated headers, folders, counts
     attachments.py  list metadata, stream bytes out, put a file in, take one off
     export.py       one message to a file (OKF .md record, or raw .eml)
     migrate.py      plan and apply old-folder migrations; never rewrites a body
@@ -41,7 +41,7 @@ from .drafts import (create_draft, create_forward_draft, create_persona_reply,
 from .export import export_message
 from .migrate import migrate_correspondence, plan_correspondence_migration
 from .read import (get_message, get_message_headers, group_by_sender,
-                   list_mail_folders, list_messages)
+                   list_mail_folders, list_messages, search_messages)
 from .triage import (complete_flag, flag, mark_read, mark_unread, move_message,
                      unflag)
 from .verify import verify_message
@@ -54,6 +54,6 @@ __all__ = [
     "group_by_sender", "list_attachments", "list_mail_folders",
     "list_messages", "mark_read", "mark_unread", "move_message",
     "migrate_correspondence", "plan_correspondence_migration",
-    "remove_attachment", "revise_draft", "send_draft", "unflag",
+    "remove_attachment", "revise_draft", "search_messages", "send_draft", "unflag",
     "update_draft", "verify_message",
 ]

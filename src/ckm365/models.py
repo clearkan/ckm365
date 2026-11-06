@@ -165,6 +165,14 @@ class MessageSummary:
 
 
 @dataclass
+class SearchResult:
+    messages: list[MessageSummary] = field(default_factory=list)
+    windows: int = 0                  # Graph searches run
+    truncated_days: list[str] = field(default_factory=list)  # ISO dates, ascending
+    hit_max_results: bool = False
+
+
+@dataclass
 class Message(MessageSummary):
     SELECT: ClassVar[str] = (MessageSummary.SELECT +
                              ",body,bccRecipients,"
@@ -231,19 +239,23 @@ class Attachment:
 @dataclass
 class MailFolder:
     SELECT: ClassVar[str] = ("id,displayName,totalItemCount,unreadItemCount,"
-                             "childFolderCount")
+                             "childFolderCount,parentFolderId")
     id: str
     name: str = ""
     total: int = 0
     unread: int = 0
     child_folders: int = 0
+    parent_id: str = ""
+    path: str = ""
 
     @classmethod
     def from_graph(cls, d: dict[str, Any]) -> "MailFolder":
         return cls(id=d["id"], name=d.get("displayName") or "",
                    total=int(d.get("totalItemCount") or 0),
                    unread=int(d.get("unreadItemCount") or 0),
-                   child_folders=int(d.get("childFolderCount") or 0))
+                   child_folders=int(d.get("childFolderCount") or 0),
+                   parent_id=d.get("parentFolderId") or "",
+                   path=d.get("displayName") or "")
 
 
 @dataclass

@@ -7,10 +7,11 @@ find 20 blew a tool timeout).
 
 import logging
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from ...graph import encode_segment as _seg, mailbox_path as _path
-from ...models import (MailFolder, MessageHeaders, Message, MessageSummary)
+from ...models import (MailFolder, MessageHeaders, Message, MessageSummary,
+                       SearchResult)
 from ..context import Ctx, pull
 from .common import apply_each, message_path, outcome, prefer, batch_ids
 
@@ -18,6 +19,7 @@ log = logging.getLogger("ckm365")
 
 
 _MAX_SCAN = 10000     # ceiling on a group_by_sender folder walk
+SEARCH_CAP = 275     # measured on two tenants on 2026-11-06: silent search cap
 # Graph takes IANA ("Europe/London") or Windows ("GMT Standard Time") zone
 # names; this only keeps junk out of the request body (cf. calendar._TZ_RE).
 def _odata_str(value: str, name: str) -> str:
@@ -90,6 +92,8 @@ def list_messages(ctx: Ctx, *, folder: str = "inbox", search: str | None = None,
     Three Graph behaviours worth knowing before you plan a query:
     - search (KQL, e.g. 'from:alice subject:invoice') CANNOT be combined
       with any filter or predicate — pick one.
+    - search stops at 275 rows SILENTLY (Graph's cap); use search_messages
+      for anything that can have more.
     - MATCHING A SUBJECT: prefer filter="startswith(subject,'...')", and
       distrust the alternatives — they fail SILENTLY, returning zero rows,
       which reads exactly like "no such mail". `subject eq '...'` never
@@ -145,6 +149,81 @@ def list_messages(ctx: Ctx, *, folder: str = "inbox", search: str | None = None,
         params["$orderby"] = "receivedDateTime desc"
     path = _path(mb, f"mailFolders/{_seg(folder, 'folder')}/messages")
     return pull(g, MessageSummary, path, params=params, top=top)
+
+
+def search_messages(ctx: Ctx, query: str, *, since: str, until: str | None = None,
+                    folder: str | None = None, max_results: int = 1000,
+                    account: str | None = None,
+                    mailbox: str | None = None) -> SearchResult:
+    """Search mail across a date range, splitting around Graph's silent cap.
+
+    Graph stops a message search at 275 rows SILENTLY: the nextLink chain
+    ends without saying anything was cut. This tool searches date windows
+    and bisects any full window until each is complete or only one day.
+    `since` and `until` are inclusive ISO dates (YYYY-MM-DD); until defaults
+    to today in UTC. Supply a since date that covers the archive you need.
+
+    `query` accepts KQL, including from:, subject:, AND and OR. The whole
+    query is parenthesised before adding the received-date range, so an OR
+    cannot swallow the date restriction. Quotes and backslashes are escaped.
+    Omit folder to search the whole mailbox, every folder included, or
+    pass a well-known folder name or an id from list_mail_folders to
+    search that folder alone (its subfolders are NOT included).
+
+    Returns messages deduplicated by id and sorted newest first. `windows`
+    counts Graph searches run, including full windows discarded on a split;
+    following pages of the same search does not add windows.
+    `truncated_days` lists ISO dates ascending where even ONE DAY hit 275:
+    those days may have more matches than Graph returned.
+    Windows run newest first; max_results (1–5000) stops collection and
+    sets hit_max_results when reached. This limit can leave older mail out.
+    Each window is one Graph search of up to three pages, a few seconds
+    each: a few hundred matches take seconds, several thousand take
+    minutes (measured: 5,000 in 55 windows, about four minutes).
+    Prefer list_messages for recent mail or server-side filters/predicates.
+    """
+    if not query.strip():
+        raise ValueError("query must not be empty")
+    try:
+        start = date.fromisoformat(since)
+        end = date.fromisoformat(until) if until is not None else datetime.now(UTC).date()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("since and until must be ISO dates") from exc
+    if end < start:
+        raise ValueError("until must be on or after since")
+    if not isinstance(max_results, int) or not 1 <= max_results <= 5000:
+        raise ValueError("max_results must be between 1 and 5000")
+    suffix = (f"mailFolders/{_seg(folder, 'folder')}/messages"
+              if folder is not None else "messages")
+    escaped = query.replace("\\", "\\\\").replace('"', '\\"')
+    g, mb = ctx.target(account, mailbox)
+    path = _path(mb, suffix)
+    pending = [(start, end)]
+    messages: dict[str, MessageSummary] = {}
+    result = SearchResult()
+    while pending:
+        a, b = pending.pop()
+        params = {"$search": f'"({escaped}) AND received:{a.isoformat()}..{b.isoformat()}"',
+                  "$select": MessageSummary.SELECT, "$top": "100"}
+        rows = list(g.paged(path, params=params, max_items=SEARCH_CAP + 1))
+        result.windows += 1
+        if len(rows) >= SEARCH_CAP:
+            if a < b:
+                mid = a + (b - a) // 2
+                pending.extend([(a, mid), (mid + timedelta(days=1), b)])
+                continue
+            result.truncated_days.append(a.isoformat())
+        for row in rows:
+            message = MessageSummary.from_graph(row)
+            messages.setdefault(message.id, message)
+        if len(messages) >= max_results:
+            # only a flag when something was really left out
+            result.hit_max_results = bool(pending) or len(messages) > max_results
+            break
+    result.messages = sorted(messages.values(), key=lambda m: m.received or "",
+                             reverse=True)[:max_results]
+    result.truncated_days.sort()
+    return result
 
 
 def group_by_sender(ctx: Ctx, *, folder: str = "inbox", since: str | None = None,
@@ -255,9 +334,30 @@ def get_message_headers(ctx: Ctx, message_ids: list[str], *,
                              for message_id, body in ok})
 
 
-def list_mail_folders(ctx: Ctx, *, account: str | None = None,
+def list_mail_folders(ctx: Ctx, *, parent: str | None = None,
+                      recursive: bool = False, account: str | None = None,
                       mailbox: str | None = None) -> list[MailFolder]:
-    """List top-level mail folders with item/unread counts."""
+    """List mail folders with item/unread counts. Supply parent (a folder id
+    or well-known name) to list its children instead of the top level;
+    recursive walks descendants depth-first. Each path joins display names
+    with '/' relative to the starting point.
+    """
+    suffix = (f"mailFolders/{_seg(parent, 'parent')}/childFolders"
+              if parent is not None else "mailFolders")
     g, mb = ctx.target(account, mailbox)
     params = {"$select": MailFolder.SELECT, "$top": "100"}
-    return pull(g, MailFolder, _path(mb, "mailFolders"), params=params, top=200)
+    folders = pull(g, MailFolder, _path(mb, suffix), params=params, top=200)
+    if not recursive:
+        return folders
+    pending = list(reversed(folders))
+    folders = []
+    while pending:
+        folder = pending.pop()
+        folders.append(folder)
+        if folder.child_folders > 0:
+            path = _path(mb, f"mailFolders/{_seg(folder.id, 'folder')}/childFolders")
+            children = pull(g, MailFolder, path, params=params, top=200)
+            for child in children:
+                child.path = f"{folder.path}/{child.name}"
+            pending.extend(reversed(children))
+    return folders
