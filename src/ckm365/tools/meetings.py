@@ -204,7 +204,8 @@ def export_transcript(ctx: Ctx, dest_dir: str, join_url: str, *,
     g = ctx.graph(account)
     meeting = _find_meeting(g, join_url)
     if not meeting:
-        raise ValueError("The signed-in user must be the organiser or on the invite")
+        raise ValueError("no online meeting found for that join_url: the "
+                         "signed-in user must be its organiser or on its invite")
     meeting_id = meeting["id"]
     transcripts = pull(g, Transcript, f"{_meeting_path(meeting_id)}/transcripts",
                        params={}, top=100)
