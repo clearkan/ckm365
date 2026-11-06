@@ -14,6 +14,9 @@ creation, so it stops being a literal pasted into a script (CKM-42).
 The fence is a pair of empty sentinel DIVS; it was HTML comments until
 CKM-48 found that Exchange strips those on store, which had silently
 broken every revision ckm365 ever made — see common.py.
+The profile's compose_font, when set, is applied per paragraph to caller
+text in create_reply_draft, create_forward_draft, create_draft,
+revise_draft and create_persona_reply.
 """
 
 import base64
@@ -27,7 +30,8 @@ from ...graph import Graph, mailbox_path, mailbox_path as _path
 from ...models import Draft
 from ..context import Ctx
 from .common import (BODY_MARK, SIGNATURE_MARK, fence, fenced_region,
-                     message_path, prefer, require_draft, unfenced)
+                     message_path, prefer, require_draft, style_paragraphs,
+                     unfenced)
 from .exclusions import draft_warnings, for_profile
 
 log = logging.getLogger("ckm365")
@@ -68,6 +72,12 @@ def _composed(body_html: str, signature_html: str | None) -> str:
 def _signature(ctx: Ctx, account: str | None, wanted: bool) -> str | None:
     """The profile's signature_html, unless this call opted out of it."""
     return ctx.profile(account).signature_html if wanted else None
+
+
+def _styled(ctx: Ctx, account: str | None, html: str) -> str:
+    p = ctx.profile(account)
+    return (style_paragraphs(html, p.compose_font, p.compose_size)
+            if p.compose_font else html)
 
 
 def _etag_header(data: dict) -> dict[str, str] | None:
@@ -124,6 +134,7 @@ def create_reply_draft(ctx: Ctx, message_id: str, body_html: str = "", *,
     """
     ctx.require_write()
     entries = for_profile(ctx, account)
+    body_html = _styled(ctx, account, unfenced(body_html, "body_html"))
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     action = "createReplyAll" if reply_all else "createReply"
@@ -146,6 +157,7 @@ def create_forward_draft(ctx: Ctx, message_id: str, to: list[str],
     """
     ctx.require_write()
     entries = for_profile(ctx, account)
+    body_html = _styled(ctx, account, unfenced(body_html, "body_html"))
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     created = g.post(message_path(mb, message_id, "/createForward"),
@@ -224,7 +236,7 @@ def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
     the whole body including the quote, that is update_draft.
     """
     ctx.require_write()
-    new_html = unfenced(body_html, "body_html")
+    new_html = _styled(ctx, account, unfenced(body_html, "body_html"))
     g, mb = ctx.target(account, mailbox)
     path = message_path(mb, message_id)
     data = require_draft(g, path, "revise", select=Draft.SELECT,
@@ -351,7 +363,7 @@ def create_persona_reply(ctx: Ctx, message_id: str, *, as_mailbox: str,
     """
     ctx.require_write()
     entries = for_profile(ctx, account)
-    new_html = unfenced(body_html, "body_html")
+    new_html = _styled(ctx, account, unfenced(body_html, "body_html"))
     g, mb = ctx.target(account, mailbox)
     original = g.get(message_path(mb, message_id), params={"$select": (
         "subject,from,toRecipients,ccRecipients,receivedDateTime,"
@@ -454,6 +466,7 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
     """
     ctx.require_write()
     entries = for_profile(ctx, account)
+    body_html = _styled(ctx, account, unfenced(body_html, "body_html"))
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     message: dict = {

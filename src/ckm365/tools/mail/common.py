@@ -10,6 +10,7 @@ text again afterwards.
 """
 
 import logging
+import re
 
 from ...graph import Graph, encode_segment as _seg, mailbox_path as _path
 
@@ -17,6 +18,23 @@ log = logging.getLogger("ckm365")
 
 
 _MAX_BATCH_IDS = 200  # one triage call = at most 10 Graph batches
+_PARAGRAPH_RE = re.compile(r"<p(\s[^>]*)?>(.*?)</p>", re.IGNORECASE | re.DOTALL)
+
+
+def style_paragraphs(html: str, font: str, size: str) -> str:
+    """Style each paragraph: Outlook does not cascade a wrapper's style."""
+    def styled(match: re.Match[str]) -> str:
+        content = match.group(2)
+        if not content.strip() or "font-family" in match.group(0).lower():
+            return match.group(0)
+        opening = match.string[match.start():match.start(2)]
+        closing = match.string[match.end(2):match.end()]
+        if match.group(1) is None:
+            opening = opening[:-1] + ' style="margin:0 0 12pt 0">'
+        return (opening + f'<span style="font-size:{size};font-family:{font}">'
+                + content + "</span>" + closing)
+
+    return _PARAGRAPH_RE.sub(styled, html)
 
 
 def prefer(body_format: str) -> dict[str, str]:
