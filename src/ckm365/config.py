@@ -14,8 +14,10 @@ _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
                  "description", "allow_send", "timezone", "signature_html",
-                 "exclusions_file"}
+                 "exclusions_file", "compose_font", "compose_size"}
 _TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
+_COMPOSE_FONT_RE = re.compile(r"[A-Za-z0-9 ,'-]{1,100}")
+_COMPOSE_SIZE_RE = re.compile(r"\d{1,2}(\.\d{1,2})?pt")
 _MAX_SIGNATURE = 8192  # real HTML signatures measure a few hundred bytes
 AUTH_MODES = ("device_code", "client_credential")
 
@@ -41,6 +43,9 @@ class Profile:
                                  # by design: Outlook's roaming signature
                                  # would need MailboxSettings.Read, a scope
                                  # this app deliberately never asks for.
+    compose_font: str | None = None  # opt-in: mailbox fonts differ, and reading
+                                    # them needs MailboxSettings.Read.
+    compose_size: str = "11pt"  # paragraph font size when compose_font is set
     timezone: str | None = None  # this mailbox's zone (IANA or the Windows
                                  # name Graph also accepts). Used where a
                                  # bare date would otherwise be guessed —
@@ -83,6 +88,19 @@ class Profile:
                     f"{len(self.signature_html)} chars, over the "
                     f"{_MAX_SIGNATURE} cap — a signature is a sign-off, not a "
                     "document")
+        if self.compose_font is not None and (
+                not isinstance(self.compose_font, str)
+                or not _COMPOSE_FONT_RE.fullmatch(self.compose_font)):
+            raise ConfigError(
+                f"profile {self.name!r}: compose_font must be a string "
+                "matching [A-Za-z0-9 ,'-]{1,100}"
+            )
+        if (not isinstance(self.compose_size, str)
+                or not _COMPOSE_SIZE_RE.fullmatch(self.compose_size)):
+            raise ConfigError(
+                f"profile {self.name!r}: compose_size must be a point size "
+                "like '11pt' or '10.5pt' (one or two digits per part)"
+            )
         if self.timezone is not None and not _TZ_RE.fullmatch(self.timezone):
             raise ConfigError(
                 f"profile {self.name!r}: timezone must be a zone name like "
