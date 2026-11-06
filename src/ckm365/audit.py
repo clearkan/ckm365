@@ -20,14 +20,17 @@ otherwise skipped with the steps to enable it:
   explicit FullAccess grant in the tenant. Graph cannot see FullAccess
   or SendAs, which is why this section exists at all.
 
-Output is plain text, or Markdown with ``--md`` (stdout or a file). Exit 1
-if any RISK finding. Nothing here writes to a tenant; the fixes are printed,
-not run.
+Output is plain text, or Markdown with ``--md`` (stdout or a file). Exit codes
+are 0 clean or below ``--fail-on`` (default risk), 1 WARN, 2 FAIL, 3 RISK,
+using the highest non-baselined severity. Nothing here writes to a tenant;
+the fixes are printed, not run.
 """
 
 import argparse
 import json
 import logging
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,27 +76,93 @@ class Section:
     scope: str = "skipped"          # "tenant", "user", "profile" or "skipped"
     rows: list[tuple[str, str]] = field(default_factory=list)
     enable: list[str] = field(default_factory=list)   # how to widen/enable
+    baselined: set[int] = field(default_factory=set)  # accepted row indexes
 
     def add(self, level: str, text: str) -> None:
         self.rows.append((level, text))
+
+
+_RANK = {"OK": 0, "INFO": 0, "SKIP": 0, "WARN": 1, "FAIL": 2, "RISK": 3}
+
+
+def exit_code(sections: list[Section], fail_on: str = "risk") -> int:
+    """Highest unaccepted severity, or zero when below the CI threshold."""
+    highest = max((_RANK[level] for s in sections
+                   for i, (level, _) in enumerate(s.rows) if i not in s.baselined),
+                  default=0)
+    return highest if highest >= _RANK[fail_on.upper()] else 0
+
+
+def _first_line(text: str) -> str:
+    return (text.splitlines() or [""])[0]
+
+
+def load_baseline(path: str | Path) -> set[tuple[str, str]]:
+    """Read accepted findings; reject unreadable or malformed baselines."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"cannot read baseline {path}") from exc
+    accepted = set()
+    for number, line in enumerate(lines, 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = re.split(r" {2,}", line, maxsplit=1)
+        if len(parts) != 2 or parts[0] not in _RANK or not parts[1].strip():
+            raise ValueError(f"malformed baseline {path} at line {number}")
+        accepted.add((parts[0], parts[1]))
+    return accepted
+
+
+def apply_baseline(sections: list[Section], accepted: set[tuple[str, str]]) -> None:
+    """Mark matching WARN/RISK rows, never failures to inspect a resource."""
+    for s in sections:
+        s.baselined = {i for i, (level, text) in enumerate(s.rows)
+                       if level in ("WARN", "RISK")
+                       and (level, _first_line(text)) in accepted}
+
+
+def write_baseline(path: str | Path, sections: list[Section]) -> None:
+    """Write current WARN/RISK findings to a private, reusable baseline."""
+    findings = sorted({f"{level}  {_first_line(text)}" for s in sections
+                       for level, text in s.rows if level in ("WARN", "RISK")})
+    header = ("# Accepted audit findings: names real accounts; keep this baseline "
+              "out of public repositories.\n")
+    try:
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
+                       "w", encoding="utf-8") as out:
+            os.fchmod(out.fileno(), 0o600)
+            out.write(header + "".join(f"{line}\n" for line in findings))
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"cannot write baseline {path}") from exc
 
 
 def run(args: argparse.Namespace) -> int:
     global _verbose
     _verbose = args.verbose
     logging.getLogger("httpx").setLevel(logging.WARNING)  # probes, not a log
+    try:
+        accepted = load_baseline(args.baseline) if args.baseline else set()
+    except ValueError as exc:
+        raise SystemExit(f"ckm365: {exc}") from exc
     sections = []
     for name, section in (("ckm365 profile", _ckm365), ("Entra/Azure (az)", _entra),
                           ("Exchange Online (pwsh)", _exchange)):
         _step(f"section: {name}")
         sections.append(section(args))
+    apply_baseline(sections, accepted)
+    if args.write_baseline:
+        try:
+            write_baseline(args.write_baseline, sections)
+        except ValueError as exc:
+            raise SystemExit(f"ckm365: {exc}") from exc
     out = render_md(sections) if args.md else render_text(sections)
     if args.md and args.md != "-":
         Path(args.md).write_text(out)
         print(f"audit written to {args.md}")
     else:
         print(out, end="")
-    return 1 if any(lvl == "RISK" for s in sections for lvl, _ in s.rows) else 0
+    return exit_code(sections, args.fail_on)
 
 
 def add_parser(sub) -> None:
@@ -105,6 +174,15 @@ def add_parser(sub) -> None:
                    "only one is configured)")
     p.add_argument("--md", nargs="?", const="-", metavar="PATH",
                    help="Markdown output, to PATH or stdout")
+    p.add_argument("--fail-on", choices=("warn", "fail", "risk"), default="risk",
+                   help="exit at this severity or higher (default: risk); "
+                        "codes: 1 WARN, 2 FAIL, 3 RISK")
+    p.add_argument("--baseline", metavar="FILE",
+                   help="accepted WARN/RISK findings; mark them baselined and "
+                        "exclude them from exit codes (FAIL is never accepted)")
+    p.add_argument("--write-baseline", metavar="FILE",
+                   help="write current WARN/RISK findings to FILE (mode 0600); "
+                        "names real accounts, so keep outside public repos")
     p.add_argument("--user", action="append", default=[], metavar="UPN",
                    help="also audit this account's roles/apps/RBAC (repeatable)")
     p.add_argument("--mailbox", metavar="ADDR",
@@ -122,7 +200,11 @@ def render_text(sections: list[Section]) -> str:
     lines = []
     for s in sections:
         lines.append(f"== {s.title} [{s.scope}]")
-        lines += [f"  {lvl:<4}  {text}" for lvl, text in s.rows]
+        for i, (lvl, text) in enumerate(s.rows):
+            if i in s.baselined:
+                head, sep, tail = text.partition("\n")
+                text = f"{head} (baselined){sep}{tail}"
+            lines.append(f"  {lvl:<4}  {text}")
         lines += [f"  to enable/widen: {e}" for e in s.enable]
         lines.append("")
     lines.append(_summary(sections))
@@ -133,8 +215,10 @@ def render_md(sections: list[Section]) -> str:
     lines = ["# Mailbox access audit", ""]
     for s in sections:
         lines += [f"## {s.title} ({s.scope})", ""]
-        for lvl, text in s.rows:
-            head, *tail = text.splitlines()
+        for i, (lvl, text) in enumerate(s.rows):
+            head, *tail = text.splitlines() or [""]
+            if i in s.baselined:
+                head += " (baselined)"
             lines.append(f"- **{lvl}** {head}")
             lines += [f"  - {t.strip()}" for t in tail]
         if s.enable:
@@ -147,9 +231,14 @@ def render_md(sections: list[Section]) -> str:
 
 
 def _summary(sections: list[Section]) -> str:
-    counts = {lvl: sum(1 for s in sections for got, _ in s.rows if got == lvl)
+    counts = {lvl: sum(1 for s in sections for i, (got, _) in enumerate(s.rows)
+                       if got == lvl and i not in s.baselined)
               for lvl in ("RISK", "WARN", "FAIL")}
-    return ("summary: " + ", ".join(f"{n} {lvl}" for lvl, n in counts.items())
+    totals = [f"{n} {lvl}" for lvl, n in counts.items()]
+    baselined = sum(len(s.baselined) for s in sections)
+    if baselined:
+        totals.append(f"{baselined} baselined")
+    return ("summary: " + ", ".join(totals)
             + " — scopes: " + ", ".join(f"{s.title}={s.scope}" for s in sections))
 
 
