@@ -39,7 +39,7 @@ from ckm365.graph import Graph  # noqa: E402
 from ckm365.tools import Ctx, WriteDisabled  # noqa: E402
 
 MAILBOX = "user@tenant-a.example"
-MASTER = "/users/user%40tenant-a.example/outlook/masterCategories"
+MASTER = "/outlook/masterCategories"  # the path suffix the tool must call
 
 
 class FakeAuth:
@@ -96,7 +96,7 @@ class FakeTenant:
                 status, body = self._sub(r)
                 out.append({"id": r["id"], "status": status, "body": body})
             return httpx.Response(200, json={"responses": out[::-1]})
-        if path == MASTER:
+        if path.endswith(MASTER):
             if request.method == "GET":
                 self.master_calls.append(("GET", None))
                 if self.master_get_status != 200:
