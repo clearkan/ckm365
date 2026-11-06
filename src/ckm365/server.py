@@ -54,7 +54,9 @@ def main(argv: list[str] | None = None) -> None:
                        help="mailbox (default: the signed-in user)")
 
     for name, help_ in (("login", "device-code login for a profile"),
-                        ("logout", "clear a profile's token cache")):
+                        ("logout", "clear a profile's token cache"),
+                        ("refresh", "drop cached access tokens so newly granted "
+                         "consent applies without a re-login")):
         p = sub.add_parser(name, help=help_)
         p.add_argument("profile", nargs="?", default=None,
                        help="profile name (optional when only one is configured)")
@@ -85,6 +87,10 @@ def main(argv: list[str] | None = None) -> None:
         auth = Auth(profile, read_only=False)
         if args.command == "login":
             print(f"logged in: {auth.login(send=args.send)}", file=sys.stderr)
+        elif args.command == "refresh":
+            count = auth.drop_access_tokens()
+            print(f"refreshed {profile.name}: dropped {count} cached access "
+                  "token(s); the next call mints a fresh one", file=sys.stderr)
         else:
             auth.logout()
             print(f"logged out: {profile.name}", file=sys.stderr)

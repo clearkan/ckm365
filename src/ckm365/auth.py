@@ -3,9 +3,11 @@
 The cache is reloaded from disk before every acquire and persisted after any
 change (Graph rotates refresh tokens on silent refresh; several concurrent
 stdio server processes share the cache file).
+Use `ckm365 refresh [profile]` to drop access tokens after granting new consent.
 """
 
 import contextlib
+import json
 import logging
 import os
 import sys
@@ -212,3 +214,26 @@ class Auth:
                 app.remove_account(account)
             self._persist()
             self._cache_path.unlink(missing_ok=True)
+
+    def drop_access_tokens(self) -> int:
+        """Drop cached access tokens so newly granted consent takes effect.
+
+        A pre-consent access token keeps returning 403 until it expires;
+        keeping the refresh token lets the next call mint a new access
+        token with the new scopes. This operation contacts no network.
+        """
+        with self._lock():
+            if not self._cache_path.exists():
+                raise NeedsLogin(
+                    f"profile {self.profile.name!r} needs a login "
+                    f"(run: ckm365 login {self.profile.name})")
+            self._reload()
+            data = json.loads(self._cache.serialize())
+            count = len(data.get("AccessToken", {}))
+            data["AccessToken"] = {}
+            self._cache.deserialize(json.dumps(data))
+            # deserialize() clears this flag; _persist() needs it set to write.
+            self._cache.has_state_changed = True
+            self._persist()
+        log.info("refreshed profile=%s dropped_access_tokens=%d", self.profile.name, count)
+        return count
