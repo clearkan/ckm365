@@ -19,11 +19,30 @@ All notable changes to ckm365 are documented here. Format follows
   folder's children, `recursive` walks the tree. Every `MailFolder` now
   carries `parent_id` and `path` ("Archive/2026/Vendor").
 
+- **Recipient exclusion list** (cw81fa). A profile may name a TOML
+  file, `exclusions_file`, of addresses that must not be mailed
+  (`action = "exclude"`) or that deserve a second look (`"warn"`), each
+  optionally scoped to a subject substring and expiring after `until`.
+  Every draft tool (create_draft, create_reply_draft,
+  create_forward_draft, update_draft, create_persona_reply) still
+  creates the draft with the recipients given and returns
+  `recipient_warnings`; reply-all's inherited recipients are checked
+  too. `send_draft` REFUSES a draft with an exclude match unless
+  `override_exclusions=True`, and its result lists every match. A new
+  read tool, `check_recipients`, tests a list first (it alone takes a
+  per-call file). A configured list that is missing or invalid is an
+  error before any Graph call. TOML rather than the proposed YAML: core
+  dependencies stay httpx and msal.
+
 ### Changed
+- `Draft` is now a subclass of `Message` (it was an alias) carrying
+  `recipient_warnings`. `isinstance(d, Message)` still holds.
 - `list_messages`' description says its `search` stops at 275 silently
   and points to `search_messages`.
 
 ### Process
+- Codex card v6n4tj for the exclusion list; at merge the error message
+  gained its reason and the send log kept its mailbox and message id.
 - Codex card z2k7hm; two changes at merge (`hit_max_results` only when
   something was left unsearched; the folder-scope note).
 

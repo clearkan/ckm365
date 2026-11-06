@@ -17,6 +17,7 @@ READ = {
              mail.list_mail_folders,
              mail.list_attachments, mail.download_attachment,
              mail.export_message, mail.group_by_sender, mail.verify_message,
+             mail.check_recipients,
              watch.list_new_messages, watch.wait_for_message,
              watch.get_watch_command, mail.plan_correspondence_migration,
              mail.migrate_correspondence],

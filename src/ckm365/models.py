@@ -198,7 +198,18 @@ class Message(MessageSummary):
             parent_folder_id=d.get("parentFolderId"))
 
 
-Draft = Message
+@dataclass
+class RecipientWarning:
+    address: str
+    field: str = ""
+    action: str = "exclude"
+    type: str = ""
+    source: str = ""
+
+
+@dataclass
+class Draft(Message):
+    recipient_warnings: list[RecipientWarning] = field(default_factory=list)
 
 
 @dataclass

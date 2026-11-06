@@ -28,6 +28,7 @@ from ...models import Draft
 from ..context import Ctx
 from .common import (BODY_MARK, SIGNATURE_MARK, fence, fenced_region,
                      message_path, prefer, require_draft, unfenced)
+from .exclusions import draft_warnings, for_profile
 
 log = logging.getLogger("ckm365")
 
@@ -119,13 +120,17 @@ def create_reply_draft(ctx: Ctx, message_id: str, body_html: str = "", *,
 
     Returns the Draft; keep its id for update_draft / revise_draft /
     add_attachment / verify_message / send_draft.
+    The result carries recipient_warnings when the profile has an exclusion list.
     """
     ctx.require_write()
+    entries = for_profile(ctx, account)
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     action = "createReplyAll" if reply_all else "createReply"
     created = g.post(message_path(mb, message_id, f"/{action}")) or {}
-    return _insert_top(g, mb, created["id"], body_html, signature_html)
+    draft = _insert_top(g, mb, created["id"], body_html, signature_html)
+    draft.recipient_warnings = draft_warnings(entries, draft)
+    return draft
 
 
 def create_forward_draft(ctx: Ctx, message_id: str, to: list[str],
@@ -137,13 +142,17 @@ def create_forward_draft(ctx: Ctx, message_id: str, to: list[str],
 
     The profile's signature_html is appended below your text unless
     signature=False, and both regions are fenced for revise_draft.
+    The result carries recipient_warnings when the profile has an exclusion list.
     """
     ctx.require_write()
+    entries = for_profile(ctx, account)
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     created = g.post(message_path(mb, message_id, "/createForward"),
                      json={"toRecipients": _addrs(to)}) or {}
-    return _insert_top(g, mb, created["id"], body_html, signature_html)
+    draft = _insert_top(g, mb, created["id"], body_html, signature_html)
+    draft.recipient_warnings = draft_warnings(entries, draft)
+    return draft
 
 
 def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
@@ -159,8 +168,10 @@ def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
     rewrite what you wrote and keep both, use revise_draft. This tool
     stays the right one for subject/to/cc/bcc, and for deliberately
     flattening a body to exactly what you pass.
+    The result carries recipient_warnings when the profile has an exclusion list.
     """
     ctx.require_write()
+    entries = for_profile(ctx, account)
     g, mb = ctx.target(account, mailbox)
     path = message_path(mb, message_id)
     current = require_draft(g, path, "modify")
@@ -175,9 +186,11 @@ def update_draft(ctx: Ctx, message_id: str, *, subject: str | None = None,
             patch[key] = _addrs(value)
     if not patch:
         raise ValueError("nothing to update")
-    return Draft.from_graph(
+    draft = Draft.from_graph(
         g.patch(path, json=patch, params={"$select": Draft.SELECT},
                 headers=_etag_header(current)))
+    draft.recipient_warnings = draft_warnings(entries, draft)
+    return draft
 
 
 def revise_draft(ctx: Ctx, message_id: str, body_html: str, *,
@@ -334,8 +347,10 @@ def create_persona_reply(ctx: Ctx, message_id: str, *, as_mailbox: str,
     because nothing is sent here.
 
     Still draft-only: a human reviews and sends, as with every other tool.
+    The result carries recipient_warnings when the profile has an exclusion list.
     """
     ctx.require_write()
+    entries = for_profile(ctx, account)
     new_html = unfenced(body_html, "body_html")
     g, mb = ctx.target(account, mailbox)
     original = g.get(message_path(mb, message_id), params={"$select": (
@@ -384,7 +399,9 @@ def create_persona_reply(ctx: Ctx, message_id: str, *, as_mailbox: str,
     log.info("tool=create_persona_reply as_mailbox=%r message_id=%r "
              "reply_all=%s threaded=%s", as_mailbox, message_id, reply_all,
              bool(parent_id))
-    return Draft.from_graph(created)
+    draft = Draft.from_graph(created)
+    draft.recipient_warnings = draft_warnings(entries, draft)
+    return draft
 
 
 def discard_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
@@ -433,8 +450,10 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
     `$select=from,sender`. For a persona reply that must also THREAD, see
     the MIME-import recipe in docs/graph-direct.md — Graph will not accept
     In-Reply-To any other way.
+    The result carries recipient_warnings when the profile has an exclusion list.
     """
     ctx.require_write()
+    entries = for_profile(ctx, account)
     signature_html = _signature(ctx, account, signature)
     g, mb = ctx.target(account, mailbox)
     message: dict = {
@@ -447,25 +466,37 @@ def create_draft(ctx: Ctx, *, to: list[str], subject: str, body_html: str,
     if bcc:
         message["bccRecipients"] = _addrs(bcc)
     created = g.post(_path(mb, "messages"), json=message)
-    return Draft.from_graph(created)
+    draft = Draft.from_graph(created)
+    draft.recipient_warnings = draft_warnings(entries, draft)
+    return draft
 
 
 def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
-               mailbox: str | None = None) -> dict:
+               mailbox: str | None = None, override_exclusions: bool = False) -> dict:
     """Send an existing draft. Refuses non-drafts and drafts with no
     recipients. Requires the server to run with --write AND --enable-send;
     the profile needs Mail.Send consent (ckm365 login <profile> --send)
-    and must not set allow_send = false."""
+    and must not set allow_send = false.
+    Refuses exclusion-list matches unless override_exclusions=True.
+    """
     ctx.require_send(account)
+    entries = for_profile(ctx, account)
     g, mb = ctx.target(account, mailbox)
     path = message_path(mb, message_id)
     current = require_draft(g, path, "send",
-                            select="id,isDraft,toRecipients,ccRecipients")
+                            select="id,isDraft,subject,toRecipients,ccRecipients,bccRecipients")
     recipients = (len(current.get("toRecipients") or [])
-                  + len(current.get("ccRecipients") or []))
+                  + len(current.get("ccRecipients") or [])
+                  + len(current.get("bccRecipients") or []))
     if not recipients:
         raise ValueError("refusing to send: draft has no recipients")
+    warnings = draft_warnings(entries, Draft.from_graph(current))
+    excluded = [w.address for w in warnings if w.action == "exclude"]
+    if excluded and not override_exclusions:
+        raise ValueError("send refused because of the exclusion list: " + ", ".join(excluded))
     g.post(path + "/send")
-    log.info("tool=send_draft SENT mailbox=%r message_id=%r recipients=%d",
-             mb, message_id, recipients)
-    return {"sent": True, "message_id": message_id, "recipients": recipients}
+    log.info("tool=send_draft SENT mailbox=%r message_id=%r recipients=%d "
+             "recipient_warnings=%d overridden=%d", mb, message_id, recipients,
+             len(warnings), len(excluded))
+    return {"sent": True, "message_id": message_id, "recipients": recipients,
+            "recipient_warnings": warnings}

@@ -13,7 +13,8 @@ from pathlib import Path
 _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
-                 "description", "allow_send", "timezone", "signature_html"}
+                 "description", "allow_send", "timezone", "signature_html",
+                 "exclusions_file"}
 _TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
 _MAX_SIGNATURE = 8192  # real HTML signatures measure a few hundred bytes
 AUTH_MODES = ("device_code", "client_credential")
@@ -33,6 +34,7 @@ class Profile:
     description: str = ""  # optional, surfaced to agents via list_accounts
     allow_send: bool = True  # false hard-caps the send tier for this profile,
                              # regardless of server flags (defense in depth)
+    exclusions_file: str | None = None  # local recipient exclusion list (TOML)
     signature_html: str | None = None  # this mailbox's sign-off, as an HTML
                                  # fragment, applied at DRAFT CREATION and
                                  # preserved by revise_draft (CKM-42). Local
