@@ -467,7 +467,7 @@ def _doctor(args: argparse.Namespace) -> int:
                         preset = serve_args[i + 1]
                 elif isinstance(arg, str) and arg.startswith("--preset="):
                     preset = arg.split("=", 1)[1]
-            enabled = set(preset.split(","))
+            enabled = {name.strip() for name in preset.split(",")}
             if "all" in enabled:
                 enabled.update(ALL_PRESETS)
             missing = [name for name in PRESETS if name not in enabled]
