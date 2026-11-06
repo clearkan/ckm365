@@ -235,7 +235,14 @@ def test_meeting_without_subject_still_gets_a_stable_name(tmp_path):
 def test_vtt_without_voice_tags_or_cue_ids_still_converts():
     md = meetings.vtt_turns("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi\n\n"
                             "00:00:02.500 --> 00:00:03.000\nthere\n")
-    assert md == [("", "00:00:01", "hi there")]
+    # unattributed cues are not merged: with no speaker, the timing is the
+    # only structure left (Fable review, 2026-11-07)
+    assert md == [("", "00:00:01", "hi"), ("", "00:00:02", "there")]
+
+
+def test_voice_tags_with_classes():
+    assert meetings.vtt_turns("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n"
+                              "<v.loud Bob>shout</v>\n") == [("Bob", "00:00:01", "shout")]
 
 
 def test_vtt_turns_split_on_speaker_change():

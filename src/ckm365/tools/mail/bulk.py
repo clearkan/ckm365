@@ -137,7 +137,10 @@ def export_messages(ctx: Ctx, dest_dir: str, *, message_ids: list[str] | None = 
                             inline_count += 1
                             name = f"inline{inline_count}-{name}"
                         target = directory / name
-                        if target.exists():
+                        # an embedded message or cloud link has no bytes to
+                        # save; the record's manifest still lists it
+                        if (attachment.kind not in ("", "fileAttachment")
+                                or target.exists()):
                             continue
                         download_attachment(ctx, mid,
                                             str(target if attachment.is_inline

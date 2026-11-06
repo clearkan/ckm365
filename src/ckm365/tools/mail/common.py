@@ -18,7 +18,10 @@ log = logging.getLogger("ckm365")
 
 
 _MAX_BATCH_IDS = 200  # one triage call = at most 10 Graph batches
-_PARAGRAPH_RE = re.compile(r"<p(\s[^>]*)?>(.*?)</p>", re.IGNORECASE | re.DOTALL)
+# [^<>] keeps a stray "<p " from scanning to the end of the input, and the
+# lookahead stops an unclosed <p> from swallowing the next paragraph.
+_PARAGRAPH_RE = re.compile(r"<p(\s[^<>]*)?>((?:(?!<p[\s>]).)*?)</p>",
+                           re.IGNORECASE | re.DOTALL)
 
 
 def style_paragraphs(html: str, font: str, size: str) -> str:

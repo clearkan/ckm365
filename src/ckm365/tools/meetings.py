@@ -132,10 +132,10 @@ def vtt_turns(vtt: str) -> list[tuple[str, str, str]]:
         if start.count(":") == 1:
             start = "00:" + start
         text = " ".join(line.strip() for line in lines[timing + 1:])
-        voice = re.search(r"<v\s+([^>]+)>", text)
+        voice = re.search(r"<v(?:\.[^\s>]*)?\s+([^>]+)>", text)
         speaker = voice.group(1).strip() if voice else ""
-        text = re.sub(r"<v\s+[^>]+>|</v>", "", text).strip()
-        if turns and turns[-1][0] == speaker:
+        text = re.sub(r"<v(?:\.[^\s>]*)?\s+[^>]+>|</v>", "", text).strip()
+        if speaker and turns and turns[-1][0] == speaker:  # unattributed cues keep their own timings
             turns[-1] = (speaker, turns[-1][1], turns[-1][2] + " " + text)
         else:
             turns.append((speaker, start, text))
