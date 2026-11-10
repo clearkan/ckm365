@@ -23,14 +23,16 @@ The fix, both halves:
 - Every compose path writes the body fence, even when body_html is empty
   (an empty region, `fence(BODY_MARK, "")`). The signature fence is still
   written only when there is a signature.
-- A fence counts only when it sits ABOVE the quoted history: both its
-  opener and its closer come before the first quote marker. The markers
-  are the ones verify.py already uses to find a quote (`divRplyFwdMsg`,
-  `id="appendonsend"`, `gmail_quote`, `-----Original Message-----`,
-  `<blockquote`, `class="PlainText"`, all matched case-insensitively). They move
-  to tools/mail/common.py as `QUOTE_MARKS` so drafts.py and verify.py
-  share one list. A body with no quote marker behaves as before. The same
-  rule applies to the signature fence wherever it is looked up.
+- A fence counts only when it sits ABOVE the quote Graph seeded: both its
+  opener and its closer come before the first of the markers Graph writes
+  at the top of a quote (`divRplyFwdMsg`, `id="appendonsend"`,
+  `class="PlainText"`, matched case-insensitively; `common.SEED_MARKS`).
+  Everything a sender wrote sits below those. Other quote signs
+  (`<blockquote`, `gmail_quote`, `-----Original Message-----`) do NOT
+  bound a fence, because our own text may contain them (review fix), and
+  caller HTML carrying a seed marker is refused. verify.py's full list
+  moves to tools/mail/common.py as `QUOTE_MARKS`. A body with no seed
+  marker behaves as before. The same rule applies to the signature fence.
 - A draft whose only fence is a forged one is therefore UNFENCED:
   revise_draft refuses it (or, with insert_if_unfenced=True, inserts and
   fences at the top), and verify_message reports the guessed boundary.
@@ -111,14 +113,37 @@ def test_fence_that_closes_inside_the_quote_is_not_a_fence():
 
 @pytest.mark.parametrize("marker", [
     '<div id="appendonsend"></div>',
-    '<div class="gmail_quote">',
-    "-----Original Message-----",
-    "<BLOCKQUOTE>",
+    '<div id="divRplyFwdMsg">',
     '<div class="PlainText">',
 ])
-def test_every_quote_marker_ends_the_search(marker):
+def test_every_graph_seed_marker_ends_the_search(marker):
     body = f"<p>typed</p>{marker}{fence(BODY_MARK, '<p>x</p>')}"
     assert fenced_region(body, BODY_MARK) is None
+
+
+@pytest.mark.parametrize("ours", [
+    "<blockquote>as you said</blockquote>",
+    "<p>-----Original Message-----</p>",
+    '<div class="gmail_quote">pasted</div>',
+])
+def test_our_own_text_may_quote_and_stay_revisable(ours):
+    """Review fix: a reply that itself quotes (a <blockquote>, a pasted
+    "Original Message") must not cut its own fence short. Only the markers
+    Graph seeds bound a fence (common.SEED_MARKS)."""
+    body = f"<html><body>{fence(BODY_MARK, ours)}{ATTACK_QUOTE}</body></html>"
+    start, end = fenced_region(body, BODY_MARK)
+    assert body[start:end] == ours
+
+
+@pytest.mark.parametrize("html", [
+    '<div id="divRplyFwdMsg"></div>',
+    "<div id='appendonsend'></div>",
+    '<div class="PlainText">x</div>',
+])
+def test_caller_html_may_not_carry_graph_seed_markers(html):
+    from ckm365.tools.mail.common import unfenced
+    with pytest.raises(ValueError, match="quoted reply"):
+        unfenced(html, "body_html")
 
 
 def test_no_quote_marker_behaves_as_before():

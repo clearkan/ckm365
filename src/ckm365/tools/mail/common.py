@@ -106,10 +106,18 @@ QUOTE_MARKS = ("divrplyfwdmsg", 'id="appendonsend"', "gmail_quote",
                'class="plaintext"')
 
 
+# The subset GRAPH writes at the top of a quote it seeds (createReply,
+# createForward, and our own MIME persona reply). Only these bound a fence:
+# everything a sender wrote sits below them, and our own text may well hold
+# a <blockquote> or an "Original Message" line, which must not cut our fence
+# short. Caller HTML carrying one is refused (`unfenced`).
+SEED_MARKS = ("divrplyfwdmsg", 'id="appendonsend"', 'class="plaintext"')
+
+
 def quote_limit(content: str) -> int:
-    """First quote marker, or the body's end when there is no quoted history."""
+    """Where Graph's seeded quote starts, or the body's end without one."""
     lowered = content.lower()
-    return min((at for mark in QUOTE_MARKS
+    return min((at for mark in SEED_MARKS
                 if (at := lowered.find(mark)) >= 0), default=len(content))
 
 
@@ -145,6 +153,12 @@ def unfenced(html: str | None, name: str) -> str:
             f"{name} must not contain ckm365's compose markers "
             '(id="ckm365-..."): they fence the region revise_draft '
             "rewrites, and a forged one would make that region ambiguous")
+    lowered = value.lower().replace("'", '"')
+    if any(mark in lowered for mark in SEED_MARKS):
+        raise ValueError(
+            f"{name} must not contain the markers Graph puts at the top of "
+            "a quoted reply (divRplyFwdMsg, appendonsend, "
+            'class="PlainText"): ckm365 reads them as where your text ends')
     return value
 
 

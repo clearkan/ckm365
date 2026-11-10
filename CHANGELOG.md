@@ -3,6 +3,21 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [Unreleased]
+
+### Security
+- **Forged compose fence** (3s6pwx): a reply's quoted history is written
+  by the sender, and a fence planted there could win. An empty-body
+  reply or forward wrote no fence of ours, and the fence search took
+  the first marker anywhere in the body, so `revise_draft` could write
+  our text into the sender's hidden markup while `verify_message`
+  reported the boundary as exact. Now every compose path writes the
+  body fence (empty when there is no text yet), a body or signature
+  fence counts only above the quote Graph seeded (`divRplyFwdMsg`,
+  `appendonsend`, `class="PlainText"`), and caller HTML carrying one of
+  those markers is refused. A reply whose own text quotes (a
+  `<blockquote>`) stays revisable.
+
 ## [2.13.0] — 2026-11-07
 
 ### Added
