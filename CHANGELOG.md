@@ -3,9 +3,29 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
-## [Unreleased]
+## [2.14.0] — 2026-11-10
+
+Security release from the 7 Nov review. **Behaviour change:** disk tools
+are now confined even when no root is configured. If you attach files
+from, or export into, anywhere other than `~/.local/share/ckm365`, set
+`CKM365_ATTACH_ROOT` / `CKM365_DOWNLOAD_ROOT` on your MCP registration.
 
 ### Security
+- **Disk roots always on** (h03k8p, j30wca). Until now
+  `add_attachment` read any file the server could read when
+  `CKM365_ATTACH_ROOT` was unset (the default), so an injected agent
+  could attach the token cache, `profiles.toml` or `~/.ssh` to a draft;
+  and the download, export, transcript and migration tools wrote
+  wherever the agent pointed. Both roots now default to
+  `~/.local/share/ckm365` (`$XDG_DATA_HOME/ckm365`, created 0700), and
+  ckm365's state directory, the profiles file and its directory, and any
+  hidden path below the root are refused whatever the root. Symlinks
+  are resolved before the check.
+- **Exclusion override is the operator's** (v0yzaw). `send_draft(
+  override_exclusions=True)` now needs `allow_exclusion_override = true`
+  in the profile; without it the send is refused, naming the key. Every
+  override that lets an excluded recipient through is logged at WARNING
+  (ids and counts only).
 - **Forged compose fence** (3s6pwx): a reply's quoted history is written
   by the sender, and a fence planted there could win. An empty-body
   reply or forward wrote no fence of ours, and the fence search took
@@ -17,6 +37,10 @@ All notable changes to ckm365 are documented here. Format follows
   `appendonsend`, `class="PlainText"`), and caller HTML carrying one of
   those markers is refused. A reply whose own text quotes (a
   `<blockquote>`) stays revisable.
+
+### Changed
+- `VERSION` was left at 2.12.0 by the 2.13.0 release; it is in step
+  again.
 
 ## [2.13.0] — 2026-11-07
 

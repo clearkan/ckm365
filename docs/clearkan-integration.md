@@ -173,6 +173,15 @@ them.
   from the manifest, so re-exporting such a message changes its file;
   and `ckm365 audit` exits by severity (RISK is now 3, was 1; see
   `--fail-on`).
+- **v2.14.0**: security release, and a BEHAVIOUR CHANGE for any
+  consumer that downloads, exports or attaches: those paths are now
+  confined to `~/.local/share/ckm365` unless `CKM365_DOWNLOAD_ROOT` /
+  `CKM365_ATTACH_ROOT` say otherwise, and ckm365's state, the profiles
+  file and hidden paths are always refused. Set the roots in the
+  consumer's environment if it writes elsewhere. `Profile` gains
+  `allow_exclusion_override` (default false), which `send_draft`'s
+  `override_exclusions` now requires. Empty-body reply and forward
+  drafts now carry an empty body fence.
 
 ---
 

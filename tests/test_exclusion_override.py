@@ -136,7 +136,7 @@ def test_override_is_logged_at_warning_without_addresses(tmp_path, caplog):
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
     text = warnings[0].getMessage()
-    assert "override" in text and "d1" in text and "1" in text
+    assert "override" in text.lower() and "d1" in text and "1" in text
     assert OPTED not in caplog.text
 
 
