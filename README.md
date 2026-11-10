@@ -85,11 +85,12 @@ the core (`httpx`/`msal` — nothing else, not even pydantic); add the
 Send consent is a deliberate per-tenant opt-in (`scripts/add-send-scopes.sh`)
 on top of the base consent from `scripts/create-app-registration.sh`.
 
-`download_attachment` and `export_message` sit in the read tier because
-they only READ the mailbox — but they write bytes to the server's local
-disk, which is what `CKM365_DOWNLOAD_ROOT` (falling back to
-`CKM365_ATTACH_ROOT`) is for: set it and both are confined to that
-directory.
+`download_attachment` and `export_message` are read-tier tools that write local files.
+Disk confinement is always on: `CKM365_DOWNLOAD_ROOT` (falling back to
+`CKM365_ATTACH_ROOT`) bounds writes; `CKM365_ATTACH_ROOT` bounds attachment reads.
+Both default to `~/.local/share/ckm365` (or `$XDG_DATA_HOME/ckm365`).
+The state directory, profiles file and its parent directory, and hidden paths
+below the chosen root are always denied, even with a broad root configured.
 
 The `teams` preset (read-only discovery: `list_teams`, `list_channels`,
 `list_installed_apps`) sits **outside** that ladder on its own consent

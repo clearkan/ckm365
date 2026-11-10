@@ -63,6 +63,7 @@ def plan_correspondence_migration(ctx: Ctx, dir: str) -> dict:
     local records and raw mail, never writes, never calls Graph, and never
     recurses into subfolders. CKM365_DOWNLOAD_ROOT fences the directory
     (falling back to CKM365_ATTACH_ROOT, like export_message).
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
 
     Each item proposes an action:
     - none: keep this current record, identified sidecar, or paired .eml.
@@ -335,7 +336,9 @@ def migrate_correspondence(ctx: Ctx, dir: str, *, actions: list[str] | None = No
     failed carries a per-file error; other items still proceed.
 
     Read tier, no new consent. CKM365_DOWNLOAD_ROOT fences the directory
-    and destinations, falling back to CKM365_ATTACH_ROOT. The result gives
+    and destinations, falling back to CKM365_ATTACH_ROOT.
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
+    The result gives
     per-file details and outcome counts; only counts reach the log.
     """
     applicable = {"upgrade", "pair", "backfill-id"}
