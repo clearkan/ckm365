@@ -69,6 +69,17 @@ session; everything else worth knowing is one hop from here.
    release (`git tag -a vX.Y.Z -m "..."`), and push commit AND tags to
    `origin main` — downstream consumers (ClearKan) pin to these tags.
 
+## The CKM board (seanwy's tracker, since 2026-11-10)
+
+Besides `board/` (the repo's own issues), this project's agent keeps the
+"CKM board", a Claude Doc that seanwy reads instead of chat; its link is
+in the Registry tab of his tracker. Format and protocol are omni's
+`skills/tracker/SKILL.md`. In short: anything waiting on seanwy goes in
+"Your next steps" with the exact next step and a Context (Walk and talk,
+At PC, ...); tick items the moment they are done; and whenever a P1 or
+P2 row changes, send omni one line, `CKM changed: CKM-xxxxxx <status>,
+<Context>, <title>`. Rows reuse the repo board's OIF id where one exists.
+
 ## Codex as co-pilot (implementation cards)
 
 Since 2026-10-26 implementation work can be handed to Codex through
