@@ -14,7 +14,8 @@ _FORBIDDEN_TENANTS = {"common", "organizations", "consumers"}
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROFILE_KEYS = {"tenant_id", "client_id", "auth", "default_mailbox",
                  "description", "allow_send", "timezone", "signature_html",
-                 "exclusions_file", "compose_font", "compose_size"}
+                 "exclusions_file", "compose_font", "compose_size",
+                 "allow_exclusion_override"}
 _TZ_RE = re.compile(r"[A-Za-z0-9_+/ -]{1,64}")
 _COMPOSE_FONT_RE = re.compile(r"[A-Za-z0-9 ,'-]{1,100}")
 _COMPOSE_SIZE_RE = re.compile(r"\d{1,2}(\.\d{1,2})?pt")
@@ -53,6 +54,7 @@ class Profile:
                                  # from Graph would need MailboxSettings.Read,
                                  # a scope this app deliberately never asks
                                  # for, so it is configured, not discovered.
+    allow_exclusion_override: bool = False
 
     def __post_init__(self) -> None:
         if not _NAME_RE.fullmatch(self.name):
@@ -74,6 +76,10 @@ class Profile:
             # a string like "false" is truthy — the cap must never fail open
             raise ConfigError(
                 f"profile {self.name!r}: allow_send must be a TOML boolean"
+            )
+        if not isinstance(self.allow_exclusion_override, bool):
+            raise ConfigError(
+                f"profile {self.name!r}: allow_exclusion_override must be a TOML boolean"
             )
         if self.signature_html is not None:
             # a non-string here would be spliced into an outgoing mail body

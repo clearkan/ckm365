@@ -99,7 +99,8 @@ def _graph_draft(to=(), cc=(), bcc=(), subject="Weekly update"):
             "bccRecipients": _addrs(bcc)}
 
 
-def _ctx(tmp_path, *, text=LIST, configured=True, draft=None, send=False):
+def _ctx(tmp_path, *, text=LIST, configured=True, draft=None, send=False,
+         allow_exclusion_override=False):
     """A Graph where every message read/create/patch answers with `draft`
     (or, for POST /messages, echoes what was posted). Records requests."""
     seen = []
@@ -118,7 +119,7 @@ def _ctx(tmp_path, *, text=LIST, configured=True, draft=None, send=False):
                 subject=posted.get("subject", "")))
         return httpx.Response(200, json=draft)
 
-    kw = {}
+    kw = {"allow_exclusion_override": allow_exclusion_override}
     if configured:
         path = tmp_path / "exclusions.toml"
         if text is not None:
@@ -289,7 +290,8 @@ def test_send_refuses_an_excluded_recipient(tmp_path):
 
 
 def test_send_override_sends_and_says_what_it_overrode(tmp_path):
-    ctx, seen = _ctx(tmp_path, send=True, draft=_graph_draft(to=[OPTED, OK]))
+    ctx, seen = _ctx(tmp_path, send=True, draft=_graph_draft(to=[OPTED, OK]),
+                     allow_exclusion_override=True)
     r = mail.send_draft(ctx, "d1", override_exclusions=True)
     assert r["sent"] is True
     assert [w.address.lower() for w in r["recipient_warnings"]] == [OPTED]

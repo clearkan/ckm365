@@ -487,7 +487,9 @@ def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
     recipients. Requires the server to run with --write AND --enable-send;
     the profile needs Mail.Send consent (ckm365 login <profile> --send)
     and must not set allow_send = false.
-    Refuses exclusion-list matches unless override_exclusions=True.
+    Refuses exclusion-list matches unless override_exclusions=True and
+    the operator has set allow_exclusion_override = true in profiles.toml.
+    The override is the operator's decision; agents cannot enable it.
     """
     ctx.require_send(account)
     entries = for_profile(ctx, account)
@@ -504,6 +506,14 @@ def send_draft(ctx: Ctx, message_id: str, *, account: str | None = None,
     excluded = [w.address for w in warnings if w.action == "exclude"]
     if excluded and not override_exclusions:
         raise ValueError("send refused because of the exclusion list: " + ", ".join(excluded))
+    if excluded:
+        if not ctx.profile(account).allow_exclusion_override:
+            raise ValueError(
+                "send refused: allow_exclusion_override must be true in profiles.toml "
+                "to override the exclusion list: " + ", ".join(excluded)
+            )
+        log.warning("tool=send_draft OVERRIDE mailbox=%r message_id=%r overridden=%d",
+                    mb, message_id, len(excluded))
     g.post(path + "/send")
     log.info("tool=send_draft SENT mailbox=%r message_id=%r recipients=%d "
              "recipient_warnings=%d overridden=%d", mb, message_id, recipients,
