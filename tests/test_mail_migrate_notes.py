@@ -33,7 +33,10 @@ migrate = pytest.importorskip("ckm365.tools.mail.migrate")
 
 
 def _knows_notes() -> bool:
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory() as d, pytest.MonkeyPatch.context() as env:
+        # Collection runs before conftest's disk/state fixtures.
+        env.setenv("CKM365_DOWNLOAD_ROOT", d)
+        env.setenv("XDG_STATE_HOME", str(Path(d, "state")))
         Path(d, "n.md").write_text("# a note\n")
         items = migrate.plan_correspondence_migration(None, d)["items"]
         return items[0]["action"] == "note"

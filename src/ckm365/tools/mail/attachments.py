@@ -12,7 +12,6 @@ kind it is taking off).
 import base64
 import logging
 import mimetypes
-import os
 import re
 from pathlib import Path
 from urllib.parse import unquote
@@ -22,6 +21,7 @@ import httpx
 from ...graph import Graph, encode_segment as _seg
 from ...models import Attachment
 from ..context import Ctx, pull
+from . import disk
 from .common import message_path, prefer, require_draft  # noqa: F401
 from .disk import write_atomic, write_target
 
@@ -207,8 +207,8 @@ def download_attachment(ctx: Ctx, message_id: str, dest_path: str, *,
     which case the attachment's own name is used (path separators
     stripped). An existing file is never overwritten — pick another path.
     The download is atomic: a failure part-way leaves nothing behind.
-    If CKM365_DOWNLOAD_ROOT (or, failing that, CKM365_ATTACH_ROOT) is set,
-    only paths under that directory can be written.
+    CKM365_DOWNLOAD_ROOT (or CKM365_ATTACH_ROOT) confines all writes.
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
 
     Read tier — this reads the mailbox and needs no --write; the write it
     does is to LOCAL disk, which is what the roots above are for. Any
@@ -249,16 +249,12 @@ def add_attachment(ctx: Ctx, message_id: str, file_path: str, *,
 
     The 150 MB ceiling is GRAPH's, not Outlook's: a mailbox may well accept
     a larger message than this API will build. The file is read by the
-    server process on this machine; refuses non-draft messages. If the
-    CKM365_ATTACH_ROOT env var is set, only files under that directory can
-    be attached, on both paths.
+    server process on this machine; refuses non-draft messages. Both paths
+    only read files under CKM365_ATTACH_ROOT.
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
     """
     ctx.require_write()
-    source = Path(file_path).expanduser().resolve()
-    root = os.environ.get("CKM365_ATTACH_ROOT")
-    if root and not source.is_relative_to(Path(root).expanduser().resolve()):
-        raise ValueError(f"attachment path is outside CKM365_ATTACH_ROOT "
-                         f"({root}); refusing to read it")
+    source = disk.confine(Path(file_path), "attachment", root=disk.attach_root())
     size = source.stat().st_size  # stat, not read: a 150 MB file must not be
     if size > _MAX_SESSION_ATTACHMENT:  # loaded just to be rejected
         raise ValueError(

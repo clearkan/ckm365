@@ -42,7 +42,10 @@ migrate = pytest.importorskip("ckm365.tools.mail.migrate")
 
 def _knows_ckm49() -> bool:
     from test_mail_migrate import v02_email
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory() as d, pytest.MonkeyPatch.context() as env:
+        # Collection runs before conftest's disk/state fixtures.
+        env.setenv("CKM365_DOWNLOAD_ROOT", d)
+        env.setenv("XDG_STATE_HOME", str(Path(d, "state")))
         Path(d, "r.md").write_text(v02_email())
         return migrate.plan_correspondence_migration(None, d)["items"][0]["action"] == "upgrade"
 

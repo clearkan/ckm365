@@ -66,6 +66,7 @@ def export_messages(ctx: Ctx, dest_dir: str, *, message_ids: list[str] | None = 
     Read tier, no new consent. dest_dir must already exist. The same disk
     fence as export_message applies: CKM365_DOWNLOAD_ROOT (falling back to
     CKM365_ATTACH_ROOT) confines the directory and every write beneath it.
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
     This writes real mail to disk; logs carry counts only, never content.
     """
     if (sum(x is not None for x in (message_ids, conversation_id, folder)) != 1

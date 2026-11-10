@@ -352,7 +352,8 @@ def export_message(ctx: Ctx, message_id: str, dest_path: str, *,
     Read tier, no new consent. Same disk rules as download_attachment: an
     existing file is never overwritten, a failure leaves no residue, and
     CKM365_DOWNLOAD_ROOT (or CKM365_ATTACH_ROOT) confines where the file
-    may land. This writes real message content to disk — nothing about
+    may land; it defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
+    This writes real message content to disk — nothing about
     the message reaches the log, and the body never enters your context
     unless you read the file back.
 

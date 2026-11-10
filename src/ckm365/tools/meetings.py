@@ -193,6 +193,7 @@ def export_transcript(ctx: Ctx, dest_dir: str, join_url: str, *,
 
     Same disk rules as export_message: dest_dir must exist, writes are
     atomic, and CKM365_DOWNLOAD_ROOT (or CKM365_ATTACH_ROOT) confines them.
+    The root defaults to ~/.local/share/ckm365 (or $XDG_DATA_HOME/ckm365).
     Content goes straight to disk and never enters your context unless
     you read it back. Logs contain only the meeting id and counts.
     """
