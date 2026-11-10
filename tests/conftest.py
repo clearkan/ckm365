@@ -17,6 +17,17 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _disk_roots(tmp_path_factory, monkeypatch):
+    """From v2.14.0 every disk tool is confined to a root even when none is
+    configured (CKM-j30wca, CKM-h03k8p). Point both roots at pytest's base
+    temp dir so tests writing under tmp_path keep working, live runs
+    included. Tests about the roots themselves override this."""
+    base = str(tmp_path_factory.getbasetemp())
+    monkeypatch.setenv("CKM365_DOWNLOAD_ROOT", base)
+    monkeypatch.setenv("CKM365_ATTACH_ROOT", base)
+
+
+@pytest.fixture(autouse=True)
 def _state_home(tmp_path_factory, monkeypatch):
     if os.environ.get("CKM365_LIVE_ACCOUNT"):
         return
