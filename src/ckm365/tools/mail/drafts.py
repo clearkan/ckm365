@@ -64,8 +64,7 @@ def _composed(body_html: str, signature_html: str | None) -> str:
     text above it without the caller re-supplying it (the 2026-08-18
     scripts had to splice it back by hand, twice).
     """
-    return (fence(BODY_MARK, unfenced(body_html, "body_html"))
-            if body_html else "") + (
+    return fence(BODY_MARK, unfenced(body_html, "body_html")) + (
         fence(SIGNATURE_MARK, signature_html) if signature_html else "")
 
 
@@ -93,8 +92,6 @@ def _insert_top(g: Graph, mb: str, draft_id: str, body_html: str,
     data = g.get(path, params={"$select": Draft.SELECT}, headers=prefer("html"))
     current = Draft.from_graph(data)
     composed = _composed(body_html, signature_html)
-    if not composed:
-        return current
     content = _prepend(current.body.content if current.body else "", composed)
     patched = g.patch(path, json={"body": _body(content)},
                       params={"$select": Draft.SELECT},

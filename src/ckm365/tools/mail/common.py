@@ -85,11 +85,32 @@ def require_draft(g: Graph, path: str, verb: str,
 # a data- attribute on a real element all survive verbatim. Empty divs are
 # what Graph itself uses to mark up a reply body (`<div id="appendonsend">`,
 # `<div id="divRplyFwdMsg">`), so Outlook is known to render them as
-# nothing. Caller HTML carrying one of our ids is refused, so the fence can
-# never be forged from the inside.
+# nothing. Caller HTML carrying one of our ids is refused.
+# Quoted history is sender-controlled, so a fence below the quote is not ours.
 
 BODY_MARK = "ckm365-body"
 SIGNATURE_MARK = "ckm365-signature"
+
+# What a mail client leaves behind where the quoted history begins. Outlook
+# and Graph's createReply produce the first two; the rest cover mail that
+# came back through another client.
+# `class="plaintext"` is there because Graph seeds a reply to a PLAIN-TEXT
+# original completely differently: no divRplyFwdMsg, no <hr>, no blockquote,
+# just the quoted text wrapped in <div class="PlainText"> with <br> breaks.
+# Without it, quoted_thread reads False on a draft whose quote is perfectly
+# intact — a false negative on a pre-send check, found live on 2026-09-15
+# while verifying CKM-48 (one tenant's newest mail was HTML, the other's
+# plain text, and only the second failed).
+QUOTE_MARKS = ("divrplyfwdmsg", 'id="appendonsend"', "gmail_quote",
+               "-----original message-----", "<blockquote",
+               'class="plaintext"')
+
+
+def quote_limit(content: str) -> int:
+    """First quote marker, or the body's end when there is no quoted history."""
+    lowered = content.lower()
+    return min((at for mark in QUOTE_MARKS
+                if (at := lowered.find(mark)) >= 0), default=len(content))
 
 
 def fence_open(mark: str) -> str:
@@ -105,12 +126,14 @@ def fence(mark: str, html: str) -> str:
 
 
 def fenced_region(content: str, mark: str) -> tuple[int, int] | None:
-    """(start, end) of what sits INSIDE a fence, or None when unfenced."""
+    """(start, end) inside a fence above the quote, or None when unfenced."""
+    content = content or ""
+    limit = quote_limit(content)
     opener, closer = fence_open(mark), fence_close(mark)
-    start = (content or "").find(opener)
+    start = content.find(opener, 0, limit)
     if start < 0:
         return None
-    end = content.find(closer, start + len(opener))
+    end = content.find(closer, start + len(opener), limit)
     return None if end < 0 else (start + len(opener), end)
 
 

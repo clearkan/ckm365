@@ -14,8 +14,8 @@ import re
 from ...models import Message
 from ..context import Ctx
 from .attachments import attachments_of
-from .common import (BODY_MARK, SIGNATURE_MARK, fence_open, fenced_region,
-                     message_path, prefer)
+from .common import (BODY_MARK, QUOTE_MARKS, SIGNATURE_MARK, fence_open,
+                     fenced_region, message_path, prefer, quote_limit)
 
 log = logging.getLogger("ckm365")
 
@@ -26,19 +26,6 @@ log = logging.getLogger("ckm365")
 _SELECT = ("id,subject,isDraft,hasAttachments,toRecipients,ccRecipients,"
            "bccRecipients,body,internetMessageId,receivedDateTime")
 
-# What a mail client leaves behind where the quoted history begins. Outlook
-# and Graph's createReply produce the first two; the rest cover mail that
-# came back through another client.
-# `class="plaintext"` is there because Graph seeds a reply to a PLAIN-TEXT
-# original completely differently: no divRplyFwdMsg, no <hr>, no blockquote,
-# just the quoted text wrapped in <div class="PlainText"> with <br> breaks.
-# Without it, quoted_thread reads False on a draft whose quote is perfectly
-# intact — a false negative on a pre-send check, found live on 2026-09-15
-# while verifying CKM-48 (one tenant's newest mail was HTML, the other's
-# plain text, and only the second failed).
-_QUOTE_MARKS = ("divrplyfwdmsg", 'id="appendonsend"', "gmail_quote",
-                "-----original message-----", "<blockquote",
-                'class="plaintext"')
 _SIGNATURE_MARKS = ("_mailautosig",)  # Outlook's own signature wrapper
 
 _TAG = re.compile(r"<[^>]+>")
@@ -82,8 +69,8 @@ def _new_region(content: str) -> tuple[str, str]:
         return content[region[0]:region[1]], "fence"
     lowered = content.lower()
     cuts = {"signature": _first_of(lowered, _SIGNATURE_MARKS),
-            "quote": _first_of(lowered, _QUOTE_MARKS)}
-    sig_fence = content.find(fence_open(SIGNATURE_MARK))
+            "quote": _first_of(lowered, QUOTE_MARKS)}
+    sig_fence = content.find(fence_open(SIGNATURE_MARK), 0, quote_limit(content))
     if sig_fence >= 0:
         cuts["signature"] = sig_fence
     at = min((i for i in cuts.values() if i >= 0), default=-1)
@@ -176,8 +163,9 @@ def verify_message(ctx: Ctx, message_id: str, *, account: str | None = None,
         "attachments": [{"attachment_id": a.id, "name": a.name,
                          "size": a.size, "kind": a.kind,
                          "is_inline": a.is_inline} for a in items],
-        "quoted_thread": _first_of(lowered, _QUOTE_MARKS) >= 0,
-        "signature": (fence_open(SIGNATURE_MARK) in content
+        "quoted_thread": _first_of(lowered, QUOTE_MARKS) >= 0,
+        "signature": (content.find(fence_open(SIGNATURE_MARK),
+                                   0, quote_limit(content)) >= 0
                       or _first_of(lowered, _SIGNATURE_MARKS) >= 0),
         "boundary": boundary,
         "text": text[:_MAX_TEXT - 1] + "…" if len(text) > _MAX_TEXT else text,
