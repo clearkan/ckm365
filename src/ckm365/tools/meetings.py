@@ -21,7 +21,11 @@ Two tenant gates, both admin-only, both worth knowing before debugging a
   permission — see docs/usage-modes.md.
 
 Scope of what you can read: transcripts of meetings the signed-in user
-organised OR is on the calendar invite for. Someone must have actually
+organised OR is on the calendar invite for, IN THE USER'S OWN TENANT. A
+meeting organised in another tenant resolves from its join URL but its
+transcript list answers 403 (measured 2026-11-08: 3 of 3 external-
+organiser meetings, against 14 of 14 same-tenant ones that worked); only
+the organiser's tenant serves it. Someone must have actually
 started transcription, and transcripts land at or after the meeting ends
 — this is meeting CONTENT after the fact, never a live feed.
 
@@ -33,11 +37,13 @@ lengths and ids only.
 import hashlib
 import logging
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import __version__
-from ..graph import Graph, encode_segment as _seg
+from ..graph import Graph, GraphError, encode_segment as _seg
 from ..models import Transcript
+from .calendar import list_events
 from .context import Ctx, pull
 from .mail.bulk import file_stem
 from .mail.disk import confine, write_atomic, write_target
@@ -199,14 +205,37 @@ def export_transcript(ctx: Ctx, dest_dir: str, join_url: str, *,
     """
     if not (join_url or "").strip():
         raise ValueError("join_url is required")
-    dest = confine(Path(dest_dir), "dest_dir")
-    if not dest.is_dir():
-        raise ValueError("dest_dir must be an existing directory")
+    dest = _dest(dest_dir)
     g = ctx.graph(account)
     meeting = _find_meeting(g, join_url)
     if not meeting:
         raise ValueError("no online meeting found for that join_url: the "
                          "signed-in user must be its organiser or on its invite")
+    meeting_id = meeting["id"]
+    parts, results = _export_parts(g, dest, meeting)
+    written = sum(result["outcome"] == "written" for result in results)
+    log.info("tool=export_transcript meeting_id=%r parts=%d written=%d already=%d",
+             meeting_id, parts, written, parts - written)
+    return {"dir": str(dest), "meeting_id": meeting_id,
+            "parts": parts, "results": results}
+
+
+def _dest(dest_dir: str) -> Path:
+    dest = confine(Path(dest_dir), "dest_dir")
+    if not dest.is_dir():
+        raise ValueError("dest_dir must be an existing directory")
+    return dest
+
+
+def _export_parts(g: Graph, dest: Path, meeting: dict,
+                  window: tuple[datetime, datetime] | None = None
+                  ) -> tuple[int, list[dict]]:
+    """Write a meeting's transcript parts; return (part count, results).
+
+    Parts are numbered over ALL the meeting's transcripts, so a part keeps
+    its number and file name whether or not a window selects it. window
+    (UTC, end exclusive) limits which parts are written and reported.
+    """
     meeting_id = meeting["id"]
     transcripts = pull(g, Transcript, f"{_meeting_path(meeting_id)}/transcripts",
                        params={}, top=100)
@@ -215,6 +244,9 @@ def export_transcript(ctx: Ctx, dest_dir: str, join_url: str, *,
     stem = file_stem(meeting.get("subject"), meeting.get("startDateTime"), meeting_id)
     results = []
     for part, transcript in enumerate(transcripts, 1):
+        if window and not (window[0] <= _utc(transcript.created or "")
+                           < window[1]):
+            continue
         vtt_path = dest / f"{stem}-transcript-part{part}.vtt"
         md_path = dest / f"{stem}-transcript-part{part}.md"
         outcome = "already"
@@ -233,8 +265,89 @@ def export_transcript(ctx: Ctx, dest_dir: str, join_url: str, *,
         results.append({"part": part, "transcript_id": transcript.id,
                         "created": transcript.created, "vtt": vtt_path.name,
                         "md": md_path.name, "outcome": outcome})
-    written = sum(result["outcome"] == "written" for result in results)
-    log.info("tool=export_transcript meeting_id=%r parts=%d written=%d already=%d",
-             meeting_id, parts, written, parts - written)
-    return {"dir": str(dest), "meeting_id": meeting_id,
-            "parts": parts, "results": results}
+    return parts, results
+
+
+def _utc(value: str) -> datetime:
+    """An ISO date or datetime as aware UTC; no offset is read as UTC,
+    which is also how Graph's calendarView reads it."""
+    try:
+        dt = datetime.fromisoformat((value or "").strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"not an ISO 8601 date or datetime: {value!r}") from exc
+    return (dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt).astimezone(UTC)
+
+
+def export_meeting_transcripts(ctx: Ctx, dest_dir: str, start: str, end: str, *,
+                               account: str | None = None) -> dict:
+    """Save the transcripts of every Teams meeting in a date range.
+
+    The one call for "get me this week's transcripts": it reads the
+    signed-in user's calendar between start and end (ISO 8601; no offset
+    means UTC), takes each online meeting's join URL, and writes its
+    transcripts exactly as export_transcript does — the same .vtt and .md
+    pair per part, the same names, the same skip-what-is-there reruns.
+
+    ONLY TRANSCRIPTS CREATED IN THE RANGE are written. This matters for
+    recurring meetings: every occurrence shares one join URL and one
+    online meeting, so the meeting's transcript list holds the whole
+    series' history. Part numbers count over that whole list, so a part
+    keeps the same file name whichever range fetched it.
+
+    One meeting failing never stops the rest. Each meeting reports an
+    outcome: `exported` (with its files), `no-transcripts` in the range
+    (common: nobody started transcription, or it is still processing,
+    since transcripts land at or after the meeting ends), `not-found` (the
+    join URL did not resolve: the user must be the organiser or on the
+    invite), `other-tenant` (a 403 on a meeting whose organiser's domain
+    differs from the mailbox's: only the organiser's tenant serves its
+    transcript, so fetch it from an account there), or `failed` with the
+    Graph error, e.g. a 403 from this tenant when its admin has not
+    enabled transcript access (see this module's docstring). Cancelled
+    events and events with no join URL are skipped.
+
+    Read tier, meetings preset. Same disk rules as export_transcript:
+    dest_dir must exist and sits under CKM365_DOWNLOAD_ROOT when set.
+    Returns file names and outcomes, never transcript text or subjects.
+    """
+    dest = _dest(dest_dir)
+    window = (_utc(start), _utc(end))
+    if window[0] >= window[1]:
+        raise ValueError("start must be before end")
+    g, mailbox = ctx.target(account, None)
+    home = mailbox.rpartition("@")[2].lower()
+    events = list_events(ctx, start=start, end=end, top=500, account=account)
+    seen, meetings = set(), []
+    for event in events:
+        url = event.join_url
+        if event.is_cancelled or not url or url in seen:
+            continue
+        seen.add(url)
+        entry = {"event_id": event.id, "meeting_id": None, "outcome": "exported",
+                 "results": []}
+        meetings.append(entry)
+        try:
+            meeting = _find_meeting(g, url)
+            if not meeting:
+                entry["outcome"] = "not-found"
+                continue
+            entry["meeting_id"] = meeting["id"]
+            _, entry["results"] = _export_parts(g, dest, meeting, window)
+            if not entry["results"]:
+                entry["outcome"] = "no-transcripts"
+        except GraphError as exc:
+            organiser = (event.organizer.address if event.organizer else "")
+            external = organiser.rpartition("@")[2].lower() not in ("", home)
+            entry.update(outcome="other-tenant" if exc.status == 403 and external
+                         else "failed", error=str(exc))
+        except (OSError, ValueError) as exc:
+            entry.update(outcome="failed", error=str(exc))
+    results = [r for entry in meetings for r in entry["results"]]
+    counts = {"events": len(events), "meetings": len(meetings),
+              "written": sum(r["outcome"] == "written" for r in results),
+              "already": sum(r["outcome"] == "already" for r in results)}
+    for outcome in ("no-transcripts", "not-found", "other-tenant", "failed"):
+        counts[outcome] = sum(e["outcome"] == outcome for e in meetings)
+    log.info("tool=export_meeting_transcripts counts=%s", counts)
+    return {"dir": str(dest), "start": start, "end": end,
+            "counts": counts, "meetings": meetings}

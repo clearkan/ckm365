@@ -5,8 +5,43 @@ All notable changes to ckm365 are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.15.0] — 2026-11-14
+
+### Added
+- **`export_meeting_transcripts`** (read, `meetings` preset): every Teams
+  meeting in a date range to disk in one call. It reads the calendar,
+  takes each online meeting's join URL, and writes transcripts through
+  `export_transcript`'s own writer, so file names, records and
+  skip-on-rerun are identical. Requested from a live session that
+  hand-rolled the calendar-to-transcript loop as scratch scripts.
+  - Only transcripts CREATED IN THE RANGE are written. A recurring
+    meeting's occurrences share one join URL and one online meeting,
+    whose transcript list is the series' whole history, so a plain loop
+    over `export_transcript` would download all of it. Part numbers
+    still count over the whole list, so a file name never depends on the
+    range that fetched it.
+  - One outcome per meeting, and one failure never stops the rest:
+    `exported`, `no-transcripts`, `not-found`, `other-tenant` (a 403 on a
+    meeting whose organiser is in another domain) or `failed`.
+  - Shared join URLs, cancelled events and events without one are
+    skipped.
+
+### Changed
+- The meetings docs and module docstring now say transcripts are readable
+  only in the user's own tenant. Being on another tenant's invite is not
+  enough: its transcript list answers 403.
+
 ### Removed
 - teams-transcript skill: pulled for further testing.
+
+### Verified
+- Offline suite green, with 8 new tests. Live on a delegated tenant over
+  one week: 25 events, 17 meetings, 4 transcripts written, a rerun
+  reporting all 4 already there, 10 meetings without a transcript, and
+  3 meetings organised in other tenants reported `other-tenant`. The
+  correlation was checked directly: 3 of 3 external-organiser meetings
+  answered 403, and 14 of 14 same-tenant ones worked. The second
+  delegated tenant had no meetings in the range.
 
 ## [2.14.0] — 2026-11-10
 

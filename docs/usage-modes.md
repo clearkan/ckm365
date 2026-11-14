@@ -202,11 +202,17 @@ drop the cached access tokens; the refresh token then mints a new one
 with the new scopes, with no interactive login. `ckm365 doctor --mcp`
 shows whether the MCP registration enables the `meetings` preset at all.
 `export_transcript` does the whole flow in one call and writes every
-part to disk.
+part to disk; `export_meeting_transcripts` does it for every meeting in
+a date range, writing only the parts created in that range.
 
 What you can read: transcripts of meetings the signed-in user organised
 **or is on the calendar invite for** — attending counts, not just
-organising. Someone must have started transcription during the meeting.
+organising — but only **in the user's own tenant**. A meeting organised
+in another tenant resolves from its join URL, then its transcript list
+answers 403 (measured 2026-11-08: 3 of 3 such meetings, against 14 of 14
+same-tenant ones that worked); fetch it with a profile in the
+organiser's tenant. Someone must have started transcription during the
+meeting.
 
 ```sh
 ./scripts/add-transcript-scopes.sh --dry-run    # then --yes; per tenant

@@ -26,7 +26,8 @@ READ = {
     "teams": [teams.list_teams, teams.list_channels,
               teams.list_installed_apps],
     "meetings": [meetings.find_meeting_id, meetings.list_meeting_transcripts,
-                 meetings.get_meeting_transcript, meetings.export_transcript],
+                 meetings.get_meeting_transcript, meetings.export_transcript,
+                 meetings.export_meeting_transcripts],
 }
 WRITE = {
     "mail": [mail.create_reply_draft, mail.create_forward_draft,

@@ -141,7 +141,9 @@ the first place, `search_messages` gets past Graph's silent 275-row search
 cap by splitting the date range, and `list_mail_folders(recursive=True)`
 reaches archive subfolders. For meetings, `export_transcript` (the
 `meetings` preset) takes a join URL and writes every transcript part as
-the raw `.vtt` plus an OKF `.md` of speaker turns.
+the raw `.vtt` plus an OKF `.md` of speaker turns, and
+`export_meeting_transcripts` does the same for every meeting in a date
+range.
 
 Folders built before dedupe and OKF v0.2 exist, and every structure change
 widens the gap. `plan_correspondence_migration` reads ONE such folder

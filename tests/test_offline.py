@@ -723,8 +723,8 @@ def test_list_and_get_transcripts():
 
 
 def test_meetings_preset_is_read_only_and_opt_in():
-    assert len(tools_for(["meetings"])) == 5  # 4 tools + list_accounts
-    assert len(tools_for(["meetings"], write=True, send=True)) == 5
+    assert len(tools_for(["meetings"])) == 6  # 5 tools + list_accounts
+    assert len(tools_for(["meetings"], write=True, send=True)) == 6
     assert meetings.get_meeting_transcript not in tools_for(
         ["all"], write=True, send=True)
     assert meetings.get_meeting_transcript in tools_for(["all", "meetings"])

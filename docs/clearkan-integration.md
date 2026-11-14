@@ -182,6 +182,10 @@ them.
   `allow_exclusion_override` (default false), which `send_draft`'s
   `override_exclusions` now requires. Empty-body reply and forward
   drafts now carry an empty body fence.
+- **v2.15.0**: new read tool `export_meeting_transcripts` (`meetings`
+  preset), every Teams transcript in a date range. Additive on the pinned
+  surface, with no behaviour change. The teams-transcript skill left the
+  repo.
 
 ---
 
