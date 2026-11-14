@@ -3,6 +3,11 @@
 All notable changes to ckm365 are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow SemVer.
 
+## [Unreleased]
+
+### Removed
+- teams-transcript skill: pulled for further testing.
+
 ## [2.14.0] — 2026-11-10
 
 Security release from the 7 Nov review. **Behaviour change:** disk tools
