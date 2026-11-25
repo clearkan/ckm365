@@ -108,7 +108,7 @@ def test_create_reply_draft_seeds_then_fences_body_and_signature():
     assert seen[0][1].endswith("/messages/m1/createReplyAll")
     patched = json.loads(seen[2][2])["body"]["content"]
     assert patched == ("<html><body>"
-                       + fence(BODY_MARK, "<p>Hello</p>")
+                       + fence(BODY_MARK, '<p style="margin:0 0 12pt 0">Hello</p>')
                        + fence(SIGNATURE_MARK, SIGNATURE)
                        + f"{QUOTE}</body></html>")
     assert "<!--" not in patched  # CKM-48: Exchange strips in-body comments
@@ -136,7 +136,7 @@ def test_create_draft_fences_body_and_appends_signature():
     mail.create_draft(ctx, to=["other-user@tenant-b.example"], subject="s",
                       body_html="<p>Hi</p>")
     content = json.loads(seen[0][2])["body"]["content"]
-    assert content == (fence(BODY_MARK, "<p>Hi</p>")
+    assert content == (fence(BODY_MARK, '<p style="margin:0 0 12pt 0">Hi</p>')
                        + fence(SIGNATURE_MARK, SIGNATURE))
     assert "<!--" not in content  # CKM-48: Exchange strips in-body comments
 
@@ -233,7 +233,8 @@ def test_create_persona_reply_fences_our_text_and_quotes_the_original():
     html = [p for p in _imported(seen).walk()
             if p.get_content_type() == "text/html"][0]
     body = html.get_payload(decode=True).decode()
-    assert fence(BODY_MARK, "<p>our answer</p>") in body   # revise_draft works
+    spaced = '<p style="margin:0 0 12pt 0">our answer</p>'
+    assert fence(BODY_MARK, spaced) in body   # revise_draft works
     assert "the original" in body and "divRplyFwdMsg" in body
 
 
@@ -258,7 +259,7 @@ def test_revise_draft_replaces_only_our_text():
     ])
     ctx = _ctx(handler)
     draft = mail.revise_draft(ctx, "d1", "<p>second</p>")
-    assert draft.body.content == _seeded("<p>second</p>", SIGNATURE)
+    assert draft.body.content == _seeded('<p style="margin:0 0 12pt 0">second</p>', SIGNATURE)
     assert "first" not in draft.body.content
     assert QUOTE in draft.body.content and SIGNATURE in draft.body.content
     assert [method for method, _, _ in seen] == ["GET", "PATCH"]  # one round trip
@@ -305,7 +306,7 @@ def test_revise_draft_inserts_at_the_top_when_asked():
     draft = mail.revise_draft(_ctx(handler), "d1", "<p>added</p>",
                               insert_if_unfenced=True)
     assert draft.body.content == (
-        "<html><body>" + fence(BODY_MARK, "<p>added</p>")
+        "<html><body>" + fence(BODY_MARK, '<p style="margin:0 0 12pt 0">added</p>')
         + f"<p>typed by hand</p>{QUOTE}</body></html>")
 
 

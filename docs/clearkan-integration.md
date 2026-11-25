@@ -186,6 +186,11 @@ them.
   preset), every Teams transcript in a date range. Additive on the pinned
   surface, with no behaviour change. The teams-transcript skill left the
   repo.
+- **v2.16.0**: `verify_message` gains `layout_warnings`. Composed text
+  now carries inline block margins, so a consumer that compares draft
+  HTML byte for byte will see `style="margin:0 0 12pt 0"` on its
+  paragraphs. Graph 502s are retried, and retries stop 60 s after the
+  first attempt.
 
 ---
 

@@ -5,6 +5,39 @@ All notable changes to ckm365 are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.16.0] — 2026-11-26
+
+### Fixed
+- **502 is retried, and retries stop at a deadline.** In the 13 Nov
+  Exchange Online outage every mailbox call hung 20-30 s and then answered
+  502 or 504 `UnknownError`. 502 was not retried at all, and five 504
+  retries ran past the MCP client's tool timeout, so agents saw a dead
+  tool instead of Graph's error. 502 now retries like 503/504 (idempotent
+  methods only), and no retry starts more than 60 s after the first
+  attempt, so a call fails with Graph's own error well inside a tool
+  timeout.
+- **Reply paragraphs no longer run together in Outlook.** The reply Graph
+  seeds carries Outlook's stylesheet `P {margin-top:0;margin-bottom:0;}`,
+  and our text sits in the same document, so plain `<p>` lost its
+  spacing. Every compose tool now gives p, ul, ol, table, blockquote and
+  headings in your text an inline `margin:0 0 12pt 0` unless they set a
+  margin of their own. The signature and quoted history are untouched.
+  Until now this happened only with a profile `compose_font`, and only
+  for bare `<p>`.
+
+### Added
+- `verify_message` returns `layout_warnings`, which flags a draft whose
+  stylesheet zeroes paragraph margins while your text has paragraphs
+  without one. The text check alone could not see this.
+
+### Changed
+- The disk-root refusal says how to fix it: copy the file under the root,
+  or set the root variable on the server's registration.
+
+### Verified
+- Offline suite 572 passed, 18 skipped, with 19 new tests. Rendering in
+  Outlook desktop and OWA is still to be checked by eye on one reply.
+
 ## [2.15.0] — 2026-11-14
 
 ### Added

@@ -40,6 +40,53 @@ def style_paragraphs(html: str, font: str, size: str) -> str:
     return _PARAGRAPH_RE.sub(styled, html)
 
 
+# --- block spacing (Outlook's seeded stylesheet) ---------------------------
+#
+# A reply Graph seeds carries Outlook's head stylesheet,
+# `<style>P {margin-top:0;margin-bottom:0;}</style>`, and our text is
+# inserted into that same document, so the rule zeroes OUR paragraphs too:
+# plain <p> from pandoc or an LLM ran together with no blank line between
+# them (reported live, 2026-11-18). Outlook styles its own paragraphs
+# inline, which is why the quoted history looked fine. Inline style beats
+# the stylesheet and survives Exchange's store, so every block element we
+# write carries its own margin unless the caller set one.
+
+BLOCK_MARGIN = "margin:0 0 12pt 0"   # the same spacing style_paragraphs uses
+_BLOCK_RE = re.compile(r"<(p|ul|ol|table|blockquote|h[1-6])(\s[^<>]*)?>", re.IGNORECASE)
+_STYLE_ATTR = re.compile(r"""\bstyle\s*=\s*(["'])(.*?)\1""", re.IGNORECASE | re.DOTALL)
+_ZEROING_RULE = re.compile(
+    r"<style[^>]*>[^<]*?(?<![\w-])p\s*\{[^}]*margin(?:-top|-bottom)?\s*:\s*0", re.IGNORECASE)
+
+
+def block_margins(html: str) -> str:
+    """Give each block element without an inline margin BLOCK_MARGIN."""
+    def spaced(match: re.Match[str]) -> str:
+        tag, attrs = match.group(1), match.group(2) or ""
+        style = _STYLE_ATTR.search(attrs)
+        if style is None:
+            return f'<{tag}{attrs} style="{BLOCK_MARGIN}">'
+        if "margin" in style.group(2).lower():
+            return match.group(0)
+        value = style.group(2).strip()
+        merged = f"{BLOCK_MARGIN};{value}" if value else BLOCK_MARGIN
+        q = style.group(1)
+        attrs = attrs[:style.start()] + f"style={q}{merged}{q}" + attrs[style.end():]
+        return f"<{tag}{attrs}>"
+
+    return _BLOCK_RE.sub(spaced, html or "")
+
+
+def unspaced_blocks(content: str, written: str) -> int:
+    """How many block elements in `written` the document's own stylesheet
+    will squash: 0 unless `content` carries a p{margin:0} rule."""
+    if not _ZEROING_RULE.search(content or ""):
+        return 0
+    return sum(1 for m in _BLOCK_RE.finditer(written or "")
+               if m.group(1).lower() == "p"
+               and not ((s := _STYLE_ATTR.search(m.group(2) or ""))
+                        and "margin" in s.group(2).lower()))
+
+
 def prefer(body_format: str) -> dict[str, str]:
     if body_format not in ("text", "html"):
         raise ValueError("body_format must be 'text' or 'html'")

@@ -15,7 +15,8 @@ from ...models import Message
 from ..context import Ctx
 from .attachments import attachments_of
 from .common import (BODY_MARK, QUOTE_MARKS, SIGNATURE_MARK, fence_open,
-                     fenced_region, message_path, prefer, quote_limit)
+                     fenced_region, message_path, prefer, quote_limit,
+                     unspaced_blocks)
 
 log = logging.getLogger("ckm365")
 
@@ -106,6 +107,16 @@ def _non_ascii(text: str) -> list[dict]:
             for c, n in sorted(counts.items())][:_MAX_NON_ASCII]
 
 
+def _layout_warnings(content: str, written: str) -> list[str]:
+    n = unspaced_blocks(content, written)
+    if not n:
+        return []
+    return [f"{n} paragraph(s) in your text have no inline margin, and this "
+            "message's stylesheet sets p margins to 0, so Outlook will show "
+            "them with no space between: revise_draft with the same body "
+            "adds the margins"]
+
+
 def verify_message(ctx: Ctx, message_id: str, *, account: str | None = None,
                    mailbox: str | None = None) -> dict:
     """Check a draft before it goes — or the sent copy after it went.
@@ -127,6 +138,11 @@ def verify_message(ctx: Ctx, message_id: str, *, account: str | None = None,
       counts: the smart-quote check, reported and never corrected.
     - `text` — that same text as plain text, capped at 4000 chars, so what
       is about to go out can be read without the thread beneath it.
+    - `layout_warnings` — rendering problems the plain `text` cannot show.
+      Today one: the document's stylesheet zeroes <p> margins (Outlook
+      seeds `P {margin-top:0;margin-bottom:0;}` into every reply) and
+      paragraphs in your text have no inline margin, so Outlook shows them
+      run together. revise_draft with the same body fixes it.
 
     `boundary` says HOW the text was told apart from the signature and the
     quoted history: "fence" is exact (ckm365 composed it), while
@@ -142,7 +158,7 @@ def verify_message(ctx: Ctx, message_id: str, *, account: str | None = None,
     Returns {"message_id", "mailbox", "subject", "is_draft", "to", "cc",
     "bcc", "recipients", "attachments", "quoted_thread", "signature",
     "boundary", "text", "text_chars", "text_truncated", "non_ascii",
-    "internet_message_id", "received"}.
+    "layout_warnings", "internet_message_id", "received"}.
     """
     g, mb = ctx.target(account, mailbox)
     message = Message.from_graph(
@@ -171,6 +187,7 @@ def verify_message(ctx: Ctx, message_id: str, *, account: str | None = None,
         "text": text[:_MAX_TEXT - 1] + "…" if len(text) > _MAX_TEXT else text,
         "text_chars": len(text), "text_truncated": len(text) > _MAX_TEXT,
         "non_ascii": _non_ascii(text),
+        "layout_warnings": _layout_warnings(content, written),
         "internet_message_id": message.internet_message_id,
         "received": message.received,
     }

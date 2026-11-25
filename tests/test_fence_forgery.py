@@ -195,7 +195,8 @@ def test_revise_after_an_empty_reply_writes_above_the_quote():
 
     revised = mail.revise_draft(_ctx(revise_handler), "d1", "<p>our answer</p>")
     content = revised.body.content
-    assert content.index("<p>our answer</p>") < content.index("divRplyFwdMsg")
+    ours = '<p style="margin:0 0 12pt 0">our answer</p>'
+    assert content.index(ours) < content.index("divRplyFwdMsg")
     assert FORGED in content            # the sender's markup is untouched
     assert "<p>decoy</p>" in content    # and not overwritten
 
@@ -222,7 +223,8 @@ def test_insert_if_unfenced_puts_a_real_fence_on_top():
     ])
     draft = mail.revise_draft(_ctx(handler), "d1", "<p>ours</p>",
                               insert_if_unfenced=True)
-    assert draft.body.content == ("<html><body>" + fence(BODY_MARK, "<p>ours</p>")
+    ours = '<p style="margin:0 0 12pt 0">ours</p>'
+    assert draft.body.content == ("<html><body>" + fence(BODY_MARK, ours)
                                   + ATTACK_QUOTE + "</body></html>")
 
 

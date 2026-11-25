@@ -18,6 +18,15 @@ a hard failure, because three sub-second retries all landed inside the same
 blip. Same retry path, more patience: 5 attempts on a ~1s base instead of 3
 on a 0.2s one (~6s expected, ~17s worst case, still far under a tool
 timeout).
+
+502 is transient too, and every retry stops at a DEADLINE (2026-11-13
+outage). For ~12 hours Exchange Online answered every mailbox call on two
+tenants with 502 or 504 `UnknownError`, each after hanging 20-30 s. 502
+was not retried at all, and five 504 retries of ~30 s each ran past the
+MCP client's ~120 s tool timeout, so the agent saw a dead tool rather than
+Graph's error. Now no retry starts once _RETRY_DEADLINE has passed since
+the first attempt, so a call gives up with Graph's own error after at most
+the deadline plus one request timeout.
 """
 
 import email.utils
@@ -39,7 +48,9 @@ log = logging.getLogger("ckm365")
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _IDEMPOTENT = {"GET", "HEAD", "PUT", "DELETE"}
 _MAX_RETRIES = 3
-_MAX_TRANSIENT_RETRIES = 5  # 503/504 outlive throttling blips — see above
+_MAX_TRANSIENT_RETRIES = 5  # 502/503/504 outlive throttling blips — see above
+_TRANSIENT = (502, 503, 504)
+_RETRY_DEADLINE = 60.0  # no retry starts later than this after the first try
 _BASE_BACKOFF = 0.2
 _TRANSIENT_BACKOFF = 1.0
 _MAX_BACKOFF = 5.0
@@ -141,7 +152,7 @@ class Graph:
         zero (the open() truncates). Errors are raised, not written: `dest`
         is created only once a response is a success.
         """
-        attempt = 0
+        attempt, started = 0, time.monotonic()
         while True:
             hdrs = {"Authorization": f"Bearer {self.auth.token()}",
                     **(headers or {})}
@@ -156,16 +167,16 @@ class Graph:
                                 written += len(chunk)
                         return written
                     resp.read()  # error bodies are small; _error needs one
-                    transient = resp.status_code in (503, 504)
+                    transient = resp.status_code in _TRANSIENT
                     budget = _MAX_TRANSIENT_RETRIES if transient else _MAX_RETRIES
                     if (resp.status_code != 429 and not transient) \
-                            or attempt >= budget:
+                            or attempt >= budget \
+                            or not self._pause(resp, attempt, budget, transient, started):
                         raise self._error(resp)
-                    self._pause(resp, attempt, budget, transient)
             except httpx.TransportError:
-                if attempt >= _MAX_RETRIES:
+                if attempt >= _MAX_RETRIES \
+                        or not self._pause(None, attempt, _MAX_RETRIES, False, started):
                     raise
-                self._pause(None, attempt, _MAX_RETRIES, False)
             attempt += 1
 
     def _send(self, method: str, path: str, *,
@@ -174,18 +185,20 @@ class Graph:
               content: bytes | None = None,
               headers: Mapping[str, str] | None = None) -> httpx.Response:
         method = method.upper()
-        attempt = 0
+        attempt, started = 0, time.monotonic()
         while True:
             hdrs = {"Authorization": f"Bearer {self.auth.token()}", **(headers or {})}
             resp: httpx.Response | None = None
+            failure: httpx.TransportError | None = None
             try:
                 resp = self._client.request(
                     method, path, params=params, json=json, content=content,
                     headers=hdrs)
-            except httpx.TransportError:
+            except httpx.TransportError as e:
                 if method not in _IDEMPOTENT or attempt >= _MAX_RETRIES:
                     raise
-            transient = resp is not None and resp.status_code in (503, 504)
+                failure = e
+            transient = resp is not None and resp.status_code in _TRANSIENT
             budget = _MAX_TRANSIENT_RETRIES if transient else _MAX_RETRIES
             if resp is not None:
                 retriable = resp.status_code == 429 or (
@@ -196,24 +209,37 @@ class Graph:
                     raise self._error(resp)
                 if attempt >= budget:
                     raise self._error(resp)
-            self._pause(resp, attempt, budget, transient)
+            if not self._pause(resp, attempt, budget, transient, started):
+                if resp is not None:
+                    raise self._error(resp)
+                assert failure is not None
+                raise failure
             attempt += 1
 
     @staticmethod
     def _pause(resp: httpx.Response | None, attempt: int, budget: int,
-               transient: bool) -> None:
+               transient: bool, started: float) -> bool:
         """Sleep before one retry: Graph's Retry-After when it sent one,
         else jittered exponential backoff (longer base for transient 5xx).
-        Shared by _send and download so both obey one policy."""
+        Shared by _send and download so both obey one policy.
+
+        Returns False, without sleeping, when the retry would start past
+        _RETRY_DEADLINE: the caller then raises the last error."""
         delay = _retry_after(resp.headers.get("retry-after")) \
             if resp is not None and resp.status_code == 429 else None
         if delay is None:
             base = _TRANSIENT_BACKOFF if transient else _BASE_BACKOFF
             delay = random.uniform(0, min(_MAX_BACKOFF, base * 2 ** attempt))
+        what = resp.status_code if resp is not None else "transport error"
+        spent = time.monotonic() - started
+        if spent + delay > _RETRY_DEADLINE:
+            log.warning("graph retry abandoned after %s: %.0fs spent, deadline %.0fs",
+                        what, spent, _RETRY_DEADLINE)
+            return False
         log.warning("graph retry %d/%d after %s (sleep %.1fs)", attempt + 1,
-                    budget, resp.status_code if resp else "transport error",
-                    delay)
+                    budget, what, delay)
         time.sleep(delay)
+        return True
 
     def get(self, path: str, **kw: Any) -> dict[str, Any]:
         return self.request("GET", path, **kw) or {}

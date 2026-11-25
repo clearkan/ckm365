@@ -14,9 +14,11 @@ creation, so it stops being a literal pasted into a script (CKM-42).
 The fence is a pair of empty sentinel DIVS; it was HTML comments until
 CKM-48 found that Exchange strips those on store, which had silently
 broken every revision ckm365 ever made — see common.py.
-The profile's compose_font, when set, is applied per paragraph to caller
-text in create_reply_draft, create_forward_draft, create_draft,
-revise_draft and create_persona_reply.
+create_reply_draft, create_forward_draft, create_draft, revise_draft and
+create_persona_reply give every block element of caller text an inline
+margin (common.block_margins), because the stylesheet Graph seeds into a
+reply zeroes paragraph margins. The profile's compose_font, when set, is
+then applied per paragraph to the same text.
 """
 
 import base64
@@ -29,9 +31,9 @@ from email.utils import formatdate, getaddresses
 from ...graph import Graph, mailbox_path, mailbox_path as _path
 from ...models import Draft
 from ..context import Ctx
-from .common import (BODY_MARK, SIGNATURE_MARK, fence, fenced_region,
-                     message_path, prefer, require_draft, style_paragraphs,
-                     unfenced)
+from .common import (BODY_MARK, SIGNATURE_MARK, block_margins, fence,
+                     fenced_region, message_path, prefer, require_draft,
+                     style_paragraphs, unfenced)
 from .exclusions import draft_warnings, for_profile
 
 log = logging.getLogger("ckm365")
@@ -74,6 +76,10 @@ def _signature(ctx: Ctx, account: str | None, wanted: bool) -> str | None:
 
 
 def _styled(ctx: Ctx, account: str | None, html: str) -> str:
+    """Caller text as it goes into a draft: every block element spaced
+    inline (the seeded stylesheet zeroes <p> margins; see common.py), then
+    the profile's compose_font when it has one."""
+    html = block_margins(html)
     p = ctx.profile(account)
     return (style_paragraphs(html, p.compose_font, p.compose_size)
             if p.compose_font else html)

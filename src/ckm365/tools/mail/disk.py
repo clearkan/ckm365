@@ -67,8 +67,11 @@ def confine(path: Path, what: str, root: Path | None = None) -> Path:
     if not path.is_relative_to(root):
         kind = "attachment" if what == "attachment" else "download"
         env = "CKM365_ATTACH_ROOT" if kind == "attachment" else "CKM365_DOWNLOAD_ROOT"
-        raise ValueError(f"{what} is outside the {kind} root ({root}); "
-                         f"set {env} to change it")
+        fix = ("copy the file under it first" if kind == "attachment"
+               else "choose a path under it")
+        raise ValueError(f"{what} is outside the {kind} root ({root}): {fix}, "
+                         f"or set {env} on the server's registration to "
+                         "change the root")
     if any(part.startswith(".") for part in path.relative_to(root).parts):
         raise ValueError(f"{what} has a hidden path component below the root; "
                          "refusing to touch it")

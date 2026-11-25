@@ -13,7 +13,7 @@ Design:
   differ (Calibri 11pt on older tenants, Aptos 12pt on newer ones). So
   a profile sets `compose_font` (e.g. "Calibri,sans-serif") and
   optionally `compose_size` (default "11pt"). Without `compose_font`
-  every body is byte-identical to before.
+  a body only gains block spacing (common.block_margins, 2026-11-18).
 - `style_paragraphs(html, font, size)` in tools/mail/common.py: every
   `<p ...>...</p>` whose tag and content mention no `font-family` gets
   its content wrapped in
@@ -178,10 +178,10 @@ def test_reply_and_forward_style_our_text_not_the_signature():
         assert QUOTE in body
 
 
-def test_without_compose_font_bodies_are_unchanged():
+def test_without_compose_font_only_spacing_is_added():
     handler, seen = _reply_handler()
     mail.create_reply_draft(_ctx(handler), "m1", "<p>Hello</p>")
-    assert fence(BODY_MARK, "<p>Hello</p>") in _patched(seen)
+    assert fence(BODY_MARK, '<p style="margin:0 0 12pt 0">Hello</p>') in _patched(seen)
 
 
 def test_create_draft_styles_body():

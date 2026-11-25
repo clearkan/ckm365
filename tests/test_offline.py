@@ -844,3 +844,69 @@ def test_set_graph_injection_seam():
     ctx.set_graph("p", make_graph(handler))  # replacing closes the old one
     assert replaced._client.is_closed
     ctx.close()
+
+
+# --- transient 5xx: 502 retried, and every retry stops at a deadline ------
+# (2026-11-13 Exchange Online outage: 502/504 after 20-30 s, on every call)
+
+def _no_sleep(monkeypatch, clock=None):
+    from ckm365 import graph as graph_mod
+    monkeypatch.setattr(graph_mod.time, "sleep", lambda s: None)
+    if clock is not None:
+        monkeypatch.setattr(graph_mod.time, "monotonic", clock)
+
+
+def test_502_retried_on_get(monkeypatch):
+    _no_sleep(monkeypatch)
+    attempts = []
+
+    def handler(request):
+        attempts.append(1)
+        if len(attempts) < 3:
+            return httpx.Response(502, json={"error": {"code": "UnknownError", "message": ""}})
+        return httpx.Response(200, json={"ok": True})
+
+    assert make_graph(handler).get("/x") == {"ok": True}
+    assert len(attempts) == 3
+
+
+def test_502_not_retried_on_post(monkeypatch):
+    _no_sleep(monkeypatch)
+    attempts = []
+
+    def handler(request):
+        attempts.append(1)
+        return httpx.Response(502, json={"error": {"code": "UnknownError", "message": ""}})
+
+    with pytest.raises(GraphError) as err:
+        make_graph(handler).post("/x")
+    assert err.value.status == 502 and len(attempts) == 1
+
+
+def test_retries_stop_at_the_deadline(monkeypatch):
+    """Each 504 'took' 30 s: the 60 s deadline allows two attempts, not six,
+    and the caller gets Graph's own error well inside a tool timeout."""
+    now = [0.0]
+
+    def handler(request):
+        now[0] += 30.0
+        return httpx.Response(504, json={"error": {"code": "UnknownError", "message": ""}})
+
+    _no_sleep(monkeypatch, clock=lambda: now[0])
+    with pytest.raises(GraphError) as err:
+        make_graph(handler).get("/x")
+    assert err.value.status == 504
+    assert now[0] <= 90.0
+
+
+def test_transport_errors_stop_at_the_deadline(monkeypatch):
+    now = [0.0]
+
+    def handler(request):
+        now[0] += 45.0
+        raise httpx.ReadTimeout("hung", request=request)
+
+    _no_sleep(monkeypatch, clock=lambda: now[0])
+    with pytest.raises(httpx.ReadTimeout):
+        make_graph(handler).get("/x")
+    assert now[0] == 90.0          # two attempts; a third would start past 60 s
